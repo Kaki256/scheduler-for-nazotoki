@@ -10,7 +10,6 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
 
 const dbPool = mysql.createPool({
   host: process.env.DB_HOST || 'localhost',
@@ -48,6 +47,12 @@ async function setupDatabase() {
     port: process.env.DB_PORT || 3306,
     multipleStatements: true
   };
+
+  console.log(`[DB Setup Debug] Attempting connection with config:
+    Host: ${dbConfig.host},
+    Port: ${dbConfig.port},
+    User: ${dbConfig.user},
+    Database: ${dbConfig.database}`);
 
   let connection;
   try {
