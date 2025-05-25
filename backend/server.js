@@ -12,7 +12,7 @@ const path = require('path');
 const app = express();
 
 const dbPool = mysql.createPool({
-  host: process.env.NS_MARIADB_HOST || 'localhost',
+  host: process.env.NS_MARIADB_HOSTNAME || 'localhost',
   user: process.env.NS_MARIADB_USER || 'scheduler_app_user',
   password: process.env.NS_MARIADB_PASSWORD || 'password',
   database: process.env.NS_MARIADB_DATABASE || 'schedule_app_db',
