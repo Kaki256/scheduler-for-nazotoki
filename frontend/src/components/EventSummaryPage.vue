@@ -1263,15 +1263,6 @@ onMounted(() => {
   background-color: #a5b4fc; /* Tailwind indigo-300 */
 }
 
-.fixed-teams-configurator {
-  /* Styles for the main configurator box */
-  /* bg-gray-100 p-4 border rounded-lg shadow-md already in template */
-}
-
-.user-list, .fixed-teams-area {
-  /* bg-white p-2 rounded border min-h-[100px] already in template */
-}
-
 .fixed-team-card {
   background-color: #e0e7ff; /* Tailwind indigo-100 */
   border: 1px solid #c7d2fe; /* Tailwind indigo-200 */
