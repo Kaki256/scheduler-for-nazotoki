@@ -109,7 +109,7 @@ async function startServer() {
     // データベースセットアップ成功後にExpressサーバーを起動
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
-      console.log(`Database for API (dbPool) is targeting: ${process.env.DB_NAME || 'schedule_app_db'}`);
+      console.log(`Database for API (dbPool) is targeting: ${process.env.NS_MARIADB_DATABASE || 'schedule_app_db'}`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);
