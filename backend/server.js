@@ -12,16 +12,18 @@ const path = require('path');
 const app = express();
 
 const dbPool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'scheduler_app_user',
-  password: process.env.DB_PASS || 'password',
-  database: process.env.DB_NAME || 'schedule_app_db',
-  port: process.env.DB_PORT || 3306,
+  host: process.env.NS_MARIADB_HOST || 'localhost',
+  user: process.env.NS_MARIADB_USER || 'scheduler_app_user',
+  password: process.env.NS_MARIADB_PASSWORD || 'password',
+  database: process.env.NS_MARIADB_DATABASE || 'schedule_app_db',
+  port: process.env.NS_MARIADB_PORT || 3306,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
   dateStrings: true // DATE/DATETIME 型を文字列として取得
 });
+
+const PORT = process.env.PORT || 3000;
 
 // データベース接続テスト (オプション)
 async function testDbConnection() {
