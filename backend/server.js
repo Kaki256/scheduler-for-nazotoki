@@ -136,19 +136,46 @@ app.get('/api/get-username', (req, res) => {
 // GET /api/events - 登録されている全てのイベントを取得
 app.get('/api/events', async (req, res) => {
   try {
-    const [rows] = await dbPool.execute('SELECT event_url, name, start_date, end_date, location_uid FROM events ORDER BY created_at DESC');
-    // 日付をYYYY-MM-DD形式にフォーマットして返す（dateStrings: true により、DBから文字列で取得される想定）
+    const currentUsername = req._constructedUsername;
+
+    const query = `
+      SELECT
+        e.event_url,
+        e.name,
+        e.start_date,
+        e.end_date,
+        e.location_uid,
+        (
+          SELECT COUNT(DISTINCT ues.username)
+          FROM user_event_selections ues
+          WHERE ues.event_url = e.event_url
+        ) AS submittedUsersCount,
+        (
+          SELECT EXISTS (
+            SELECT 1
+            FROM user_event_selections ues_user
+            WHERE ues_user.event_url = e.event_url AND ues_user.username = ?
+          )
+        ) AS currentUserHasSubmittedStatus
+      FROM events e
+      ORDER BY e.created_at DESC
+    `;
+
+    const [rows] = await dbPool.execute(query, [currentUsername]);
+
     const formattedRows = rows.map(row => ({
-      ...row,
-      // DBから 'YYYY-MM-DD' 形式の文字列で取得されるため、そのまま使用
+      event_url: row.event_url,
+      name: row.name,
       startDate: row.start_date || null,
       endDate: row.end_date || null,
-      locationUid: row.location_uid || null
+      locationUid: row.location_uid || null,
+      submittedUsersCount: parseInt(row.submittedUsersCount, 10) || 0,
+      hasCurrentUserSubmittedStatus: !!row.currentUserHasSubmittedStatus
     }));
     res.json(formattedRows);
-    console.log('Fetched events:', formattedRows);
+    console.log('Fetched events with submission status for user:', currentUsername, 'Formatted events:', formattedRows.length);
   } catch (dbError) {
-    console.error('DB Error fetching events:', dbError);
+    console.error('DB Error fetching events with submission status:', dbError);
     res.status(500).json({ error: 'データベースからのイベント一覧の取得中にエラーが発生しました。' });
   }
 });
