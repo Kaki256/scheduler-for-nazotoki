@@ -109,9 +109,8 @@ app.use(express.json()); // リクエストボディのJSONをパース
 // GET /api/get-username - ユーザー名を取得
 app.get('/api/get-username', (req, res) => {
   // 一般的なプロキシヘッダーからユーザー名を試みる
-  const username = req.headers['X-Forwarded-User'] ||
-                   req.headers['X-Showcase-User'] ||
-                   null;
+  const username =
+    req.get("X-Forwarded-User") || req.get("X-Showcase-User") || null;
 
   if (username) {
     console.log(`[AuthAPI] Username found in header: ${username}`);
