@@ -108,12 +108,11 @@ app.use(express.json()); // リクエストボディのJSONをパース
 
 app.use((req, res, next) => {
   const username =
-    req.get("X-Forwarded-User") || req.get("X-Showcase-User") || null;
+    req.get("x-forwarded-user") || req.get("x-showcase-user") || null;
   req._constructedUsername = username;
   if (username) {
     console.log(`[AuthAPI] Username found in header: ${username}`);
-  }
-  else {
+  } else {
     console.log('[AuthAPI] Username not found in headers. Consider environment variable or other fallback.');
   }
 
