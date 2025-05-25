@@ -17,6 +17,7 @@ const dbPool = mysql.createPool({
   user: process.env.DB_USER || 'scheduler_app_user',
   password: process.env.DB_PASS || 'password',
   database: process.env.DB_NAME || 'schedule_app_db',
+  port: process.env.DB_PORT || 3306,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
@@ -36,7 +37,6 @@ async function testDbConnection() {
     process.exit(1); 
   }
 }
-testDbConnection();
 
 // Database setup function
 async function setupDatabase() {
@@ -45,6 +45,7 @@ async function setupDatabase() {
     user: process.env.DB_USER || 'scheduler_app_user',
     password: process.env.DB_PASS || 'password',
     database: process.env.DB_NAME || 'schedule_app_db',
+    port: process.env.DB_PORT || 3306,
     multipleStatements: true
   };
 
@@ -96,6 +97,7 @@ async function setupDatabase() {
 async function startServer() {
   try {
     await setupDatabase(); // データベースセットアップが完了するのを待つ
+    // testDbConnection();
 
     // データベースセットアップ成功後にExpressサーバーを起動
     app.listen(PORT, () => {
