@@ -5,12 +5,13 @@ const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
 const mysql = require('mysql2/promise');
-const fetch = require('node-fetch'); // node-fetch を追加
+const fetch = require('node-fetch');
 const fs = require('fs');
+const path = require('path');
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// --- データベース接続設定 (各自の環境に合わせて変更してください) ---
 const dbPool = mysql.createPool({
   host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER || 'scheduler_app_user',
@@ -41,49 +42,71 @@ testDbConnection();
 async function setupDatabase() {
   const dbConfig = {
     host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'scheduler_nazotoki',
-    multipleStatements: true // Allow multiple statements for running SQL script
+    user: process.env.DB_USER || 'scheduler_app_user',
+    password: process.env.DB_PASS || 'password',
+    database: process.env.DB_NAME || 'schedule_app_db',
+    multipleStatements: true
   };
 
   let connection;
   try {
-    // Connect without specifying a database first to create it if it doesn't exist
+    console.log(`[DB Setup] Setting up database connection...`);
     connection = await mysql.createConnection({
       host: dbConfig.host,
       user: dbConfig.user,
       password: dbConfig.password,
-      multipleStatements: true
+      multipleStatements: dbConfig.multipleStatements
     });
+    console.log(`[DB Setup] Connected to MySQL server.`);
 
+    console.log(`[DB Setup] Creating database "${dbConfig.database}" if it does not exist...`);
     await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\`;`);
+    console.log(`[DB Setup] Database "${dbConfig.database}" created or already exists.`);
+
+    console.log(`[DB Setup] Using database "${dbConfig.database}"...`);
     await connection.query(`USE \`${dbConfig.database}\`;`);
     console.log(`Database '${dbConfig.database}' is ready or created.`);
 
-    // Read and execute db.sql
-    const sqlScript = fs.readFileSync('./db.sql', 'utf8');
+    const sqlScriptPath = path.join(__dirname, 'db.sql');
+    console.log(`[DB Setup] Reading SQL script from ${sqlScriptPath}...`);
+    if (!fs.existsSync(sqlScriptPath)) {
+      console.error(`[DB Setup] SQL script file not found: ${sqlScriptPath}`);
+      throw new Error('SQL script file not found.');
+    }
+
+    const sqlScript = fs.readFileSync(sqlScriptPath, 'utf8');
+    console.log('[DB Setup] Executing db.sql script...');
     await connection.query(sqlScript);
-    console.log('db.sql script executed successfully.');
+    console.log('[DB Setup] db.sql script executed successfully.');
 
   } catch (error) {
-    console.error('Error setting up database:', error);
-    process.exit(1); // Exit if database setup fails
+    console.error('[DB Setup] Error setting up database:', error);
+    if (error.sqlMessage) {
+        console.error('[DB Setup] SQL Error:', error.sqlMessage);
+    }
+    process.exit(1);
   } finally {
     if (connection) {
       await connection.end();
+      console.log('[DB Setup] Setup connection ended.');
     }
   }
 }
 
-// Call the setupDatabase function at the start
-setupDatabase().then(() => {
-  // Start your Express server or other application logic here
-  // For example:
-  // app.listen(port, () => {
-  //   console.log(`Server listening at http://localhost:${port}`);
-  // });
-});
+async function startServer() {
+  try {
+    await setupDatabase(); // データベースセットアップが完了するのを待つ
+
+    // データベースセットアップ成功後にExpressサーバーを起動
+    app.listen(PORT, () => {
+      console.log(`Server is running on port ${PORT}`);
+      console.log(`Database for API (dbPool) is targeting: ${process.env.DB_NAME || 'schedule_app_db'}`);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+}
 
 app.use(cors()); // 開発中は全てのオリジンを許可
 app.use(express.json()); // リクエストボディのJSONをパース
@@ -521,7 +544,7 @@ app.post('/api/get-schedule', async (req, res) => {
     dateFrom: date_from,
     dateTo: date_to,
     locationUid: location_uid, // 外部APIのペイロードに location_uid を使用
-    locationAreaUid: null // 必要に応じて
+    locationAreaUid: null
   };
 
   const targetApiUrl = 'https://escape.id/api/showcase/event/slots';
@@ -579,13 +602,10 @@ app.post('/api/save-my-status', async (req, res) => {
     selections
   });
 
-  // selections_jsonには必ずJSON文字列を保存する
   let selectionsJsonString;
   if (typeof selections === 'string') {
-    // 既にJSON文字列ならそのまま
     selectionsJsonString = selections;
   } else {
-    // 配列やオブジェクトならJSON.stringify
     selectionsJsonString = JSON.stringify(selections);
   }
 
@@ -594,7 +614,6 @@ app.post('/api/save-my-status', async (req, res) => {
     connection = await dbPool.getConnection();
     await connection.beginTransaction();
 
-    // ユーザーの選択を更新
     await connection.execute(
       `INSERT INTO user_event_selections (event_url, username, selections_json)
        VALUES (?, ?, ?)
@@ -633,11 +652,9 @@ app.get('/api/load-my-status', async (req, res) => {
     console.log(`[API /load-my-status] Query result:`, rows);
 
     if (rows.length > 0) {
-      // selections_json はDBドライバによって既にオブジェクト/配列にパースされている可能性がある
       const selectionsJsonValue = rows[0].selections_json;
       let selections;
       if (typeof selectionsJsonValue === 'string') {
-        // 文字列の場合はパースする (フォールバックまたは異なるDB設定の場合)
         try {
           selections = JSON.parse(selectionsJsonValue);
         } catch (parseError) {
@@ -646,17 +663,16 @@ app.get('/api/load-my-status', async (req, res) => {
           return res.status(500).json({ error: '保存された選択データの形式が正しくありません (文字列パースエラー)。', details: parseError.message });
         }
       } else {
-        // 文字列でない場合は、既にパースされたオブジェクト/配列として扱う
         selections = selectionsJsonValue;
       }
       res.json(selections);
     } else {
-      res.json([]); // 見つからない場合は空配列
+      res.json([]);
     }
     console.log(`[API /load-my-status] Loaded status for user: ${username}, event: ${eventUrl}`);
   } catch (error) {
     console.error(`[API /load-my-status] DB Error loading user status for user ${username}, event ${eventUrl}:`, error);
-    if (error instanceof SyntaxError) { // rows を参照しないように修正
+    if (error instanceof SyntaxError) {
         console.error(`[API /load-my-status] Malformed JSON in database for user ${username}, event ${eventUrl}. Error: ${error.message}`);
         return res.status(500).json({ error: '保存された選択データの形式が正しくありません。', details: error.message });
     }
@@ -666,15 +682,12 @@ app.get('/api/load-my-status', async (req, res) => {
   }
 });
 
-// --- ルートハンドラ (API以外のリクエストはフロントエンドへリダイレクト) ---
 app.get(/^.*$/, (req, res) => {
   if (req.path.startsWith('/api/')) { 
     return res.status(404).send('API endpoint not found'); 
   }
   res.redirect('https://nazotoki-scheduler.trap.show/');
 });
-
-// --- 新しいエンドポイント: 外部URLからHTMLを取得 ---
 
 const EXTERNAL_REQUEST_TIMEOUT = 10000; // 10秒のタイムアウト
 
@@ -685,7 +698,6 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-// 新しいエンドポイント: 外部URLからHTMLを取得
 app.post('/api/fetch-html', async (req, res) => {
   const { url } = req.body;
   if (!url) {
@@ -715,9 +727,5 @@ app.post('/api/fetch-html', async (req, res) => {
   }
 });
 
-
 // サーバーの起動
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
-
+startServer();
