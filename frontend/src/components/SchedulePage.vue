@@ -94,7 +94,8 @@
                     'empty-cell': day.empty,
                     'has-slots': day.isClickable,
                     'not-in-event-range': !day.isWithinEventRange && !day.empty && !day.hasSlots,
-                    'today': day.isToday
+                    'today': day.isToday,
+                    'no-slots-in-range-diagonal': day.isWithinEventRange && !day.hasSlots // 追加
                   }"
                   :style="getDayStyle(day)" 
                   @click="day.isClickable ? openModalForDate(day.dateString) : null"
@@ -103,7 +104,7 @@
                   :aria-disabled="!day.isClickable"
                   :aria-label="day.isClickable ? `${day.dateString} のスロットを表示` : (day.empty ? '空セル' : `${day.dateString} は選択不可`)"
                 >
-                  <div v-if="!day.empty" class="day-number">{{ day.date }}</div>
+                  <div v-if="!day.empty" class="day-number" :style="{ fontSize: '1em' }">{{ day.date }}</div>
                   <!-- Removed slot-indicator as background now shows status -->
                 </td>
               </tr>
@@ -336,7 +337,7 @@ const modalTitleComputed = computed(() => {
 });
 
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
 const weekdayLabels = ['日', '月', '火', '水', '木', '金', '土'];
 
@@ -1091,10 +1092,11 @@ const getDayStyle = (dayObject) => {
 }
 
 .schedule-page {
-  max-width: 1200px;
-  margin: 20px auto;
   padding: 20px;
-  background-color: #f9f9f9;
+  max-width: 1200px;
+  margin: 0 auto;
+  font-family: \'Segoe UI\', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #f9f9f9; /* Light gray background for the whole page */
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   font-family: 'Helvetica Neue', Arial, sans-serif;
@@ -1115,6 +1117,9 @@ const getDayStyle = (dayObject) => {
 .header-section {
   margin-bottom: 2rem;
   text-align: center;
+  margin-bottom: 30px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e0e0e0;
 }
 
 .event-title {
@@ -1171,6 +1176,7 @@ const getDayStyle = (dayObject) => {
   color: #6c757d;
 }
 .input-field:focus {
+  border-color: #007bff;
   outline: none;
   border-color: #86b7fe; /* Bootstrap focus color */
   box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
@@ -1578,19 +1584,20 @@ const getDayStyle = (dayObject) => {
 
 .calendar-table th,
 .calendar-table td {
-  border: 1px solid #e0e0e0;
+  border: 1px solid black;
   padding: 0;
   text-align: center;
   vertical-align: top;
-  height: 90px; /* Increased height for better clickability and content */
+  height: 90px;
 }
 
 .calendar-table th {
-  background-color: #f8f9fa; /* Lighter header */
-  font-weight: 500; /* Normal weight for day labels */
+  background-color: #f8f9fa;
+  font-weight: 500;
   color: #495057;
-  padding: 8px 0; /* Add padding for th */
-  font-size: 0.9em;
+  padding: 10px 0;
+  font-size: 0.85em;
+  height: auto;
 }
 
 .calendar-table th.clickable-header {
@@ -1621,11 +1628,11 @@ const getDayStyle = (dayObject) => {
 }
 
 .calendar-day-cell.not-in-event-range {
-  background-color: #f9f9f9;
-  color: #bbb;
+  background-color: #e0e0e0; /* より暗い灰色に変更 */
+  color: #a0a0a0; /* テキスト色も調整 */
 }
 .calendar-day-cell.not-in-event-range .day-number {
-  color: #bbb;
+  color: #a0a0a0; /* 日付の数字も同様に調整 */
 }
 
 .empty-cell {
@@ -1640,7 +1647,7 @@ const getDayStyle = (dayObject) => {
   padding: 2px 4px;
   background-color: rgba(255, 255, 255, 0.75); /* Semi-transparent background for readability */
   border-radius: 3px;
-  font-size: 0.8em;
+  font-size: 1em; /* フォントサイズを 1em に戻す (style属性で設定したため) */
   display: inline-block; /* To allow padding and background */
   color: #000000; /* Set text color to black */
 }
@@ -1735,4 +1742,7 @@ const getDayStyle = (dayObject) => {
   z-index: 1; /* Lower than modal overlay */
 }
 
+.calendar-day-cell.no-slots-in-range-diagonal {
+  background-image: linear-gradient(to right bottom, transparent 49.5%, rgb(219, 219, 219) 49.5%, rgb(219, 219, 219) 50.5%, transparent 50.5%);
+}
 </style>

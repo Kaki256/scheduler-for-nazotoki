@@ -23,7 +23,7 @@ const dbPool = mysql.createPool({
   dateStrings: true // DATE/DATETIME 型を文字列として取得
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // Database setup function
 async function setupDatabase() {
