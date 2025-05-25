@@ -192,7 +192,7 @@ async function deleteEvent(eventUrl, eventName) {
     }
     // 成功したらイベントリストを再読み込み
     await fetchEvents(); 
-    // TODO: 成功メッセージを表示する (例: Toast通知など)
+    alert(`イベント「${eventName || eventUrl}」を削除しました。`);
   } catch (err) {
     console.error('Failed to delete event:', err);
     errorMessage.value = `イベントの削除に失敗しました: ${err.message}`;

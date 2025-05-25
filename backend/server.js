@@ -623,7 +623,7 @@ app.get(/^.*$/, (req, res) => {
   if (req.path.startsWith('/api/')) { 
     return res.status(404).send('API endpoint not found'); 
   }
-  res.redirect('https://your-frontend-url.com'); // TODO: フロントエンドのURL
+  res.redirect('https://nazotoki-scheduler.trap.show/');
 });
 
 // --- 新しいエンドポイント: 外部URLからHTMLを取得 ---
