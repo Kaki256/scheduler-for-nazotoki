@@ -5,15 +5,14 @@
       <p class="text-gray-600 mt-2">参加したいイベントを選択するか、新しいイベントを登録しましょう。</p>
     </header>
 
-    <!-- TODO: 後で消す -->
-    <div class="mb-6 p-4 bg-yellow-100 border border-yellow-300 rounded-lg">
+    <!-- <div class="mb-6 p-4 bg-yellow-100 border border-yellow-300 rounded-lg">
       <label for="username-input" class="block text-sm font-medium text-yellow-800 mb-1">仮ユーザー名:</label>
       <div class="flex items-center gap-2">
         <input type="text" id="username-input" v-model="currentUsername" class="input-field flex-grow" placeholder="ユーザー名を入力 (例: user1)">
         <button @click="fetchEventsWithNewUser" class="button-secondary py-2 px-3 text-sm">ユーザー名で再取得</button>
       </div>
       <p class="text-xs text-yellow-700 mt-1">これは、イベントの参加状況表示とソートのテスト用です。</p>
-    </div>
+    </div> -->
 
     <div class="mb-6 text-right">
       <button
