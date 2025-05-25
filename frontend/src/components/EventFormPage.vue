@@ -110,6 +110,7 @@ const event = reactive({
   startDate: '',
   endDate: '',
   locationUid: '',
+  maxParticipants: null, // maxParticipants を追加
 });
 
 const loading = ref(false);
@@ -143,12 +144,13 @@ const formatDateForInput = (dateString) => {
 };
 
 async function fetchLocationUid() {
-  if (!event.eventUrl || effectiveMode.value === 'edit') { // props.mode を effectiveMode.value に変更
+  if (!event.eventUrl || effectiveMode.value === 'edit') {
     return;
   }
   loading.value = true;
   errorMessage.value = '';
   event.locationUid = '';
+  event.maxParticipants = null; // 初期化
 
   try {
     // バックエンドの /api/fetch-html エンドポイントを呼び出す
@@ -183,33 +185,47 @@ async function fetchLocationUid() {
     const propsData = JSON.parse(propsString);
     
     let locationUid = null;
-    // propsDataの構造を元にlocation.uidを探す
+    let maxParticipants = null; // maxParticipants を宣言
+
+    // propsDataの構造を元にlocation.uidとmaxParticipantsを探す
     if (propsData && propsData.info && Array.isArray(propsData.info) && propsData.info.length > 1) {
       const infoDetails = propsData.info[1]; 
       if (infoDetails.activeSlotGroups && Array.isArray(infoDetails.activeSlotGroups) && infoDetails.activeSlotGroups.length > 1) {
         const firstSlotGroupArray = infoDetails.activeSlotGroups[1];
         if (Array.isArray(firstSlotGroupArray) && firstSlotGroupArray.length > 0) {
-            const firstSlotGroup = firstSlotGroupArray[0]; 
-             if (firstSlotGroup && Array.isArray(firstSlotGroup) && firstSlotGroup.length > 1 && firstSlotGroup[1].location && Array.isArray(firstSlotGroup[1].location) && firstSlotGroup[1].location.length > 1 && firstSlotGroup[1].location[1].uid && Array.isArray(firstSlotGroup[1].location[1].uid) && firstSlotGroup[1].location[1].uid.length > 1) {
-                locationUid = firstSlotGroup[1].location[1].uid[1];
-            }
+          const firstSlotGroup = firstSlotGroupArray[0]; 
+          if (firstSlotGroup && Array.isArray(firstSlotGroup) && firstSlotGroup.length > 1 && firstSlotGroup[1].location && Array.isArray(firstSlotGroup[1].location) && firstSlotGroup[1].location.length > 1 && firstSlotGroup[1].location[1].uid && Array.isArray(firstSlotGroup[1].location[1].uid) && firstSlotGroup[1].location[1].uid.length > 1) {
+            locationUid = firstSlotGroup[1].location[1].uid[1];
+          }
         }
       }
       
       if (!locationUid && infoDetails.visibleLocations && Array.isArray(infoDetails.visibleLocations) && infoDetails.visibleLocations.length > 1) {
-         const firstVisibleLocationArray = infoDetails.visibleLocations[1];
-         if (Array.isArray(firstVisibleLocationArray) && firstVisibleLocationArray.length > 0) {
-            const firstVisibleLocationData = firstVisibleLocationArray[0]; 
-            if (firstVisibleLocationData && Array.isArray(firstVisibleLocationData) && firstVisibleLocationData.length > 1 && firstVisibleLocationData[1].uid && Array.isArray(firstVisibleLocationData[1].uid) && firstVisibleLocationData[1].uid.length > 1) {
-                locationUid = firstVisibleLocationData[1].uid[1];
-            }
-         }
+        const firstVisibleLocationArray = infoDetails.visibleLocations[1];
+        if (Array.isArray(firstVisibleLocationArray) && firstVisibleLocationArray.length > 0) {
+          const firstVisibleLocationData = firstVisibleLocationArray[0]; 
+          if (firstVisibleLocationData && Array.isArray(firstVisibleLocationData) && firstVisibleLocationData.length > 1 && firstVisibleLocationData[1].uid && Array.isArray(firstVisibleLocationData[1].uid) && firstVisibleLocationData[1].uid.length > 1) {
+            locationUid = firstVisibleLocationData[1].uid[1];
+          }
+        }
+      }
+
+      // maxParticipants を infoDetails 直下から取得
+      if (infoDetails.maxParticipants && Array.isArray(infoDetails.maxParticipants) && infoDetails.maxParticipants.length > 1) {
+        maxParticipants = infoDetails.maxParticipants[1];
       }
     }
 
     if (locationUid) {
       event.locationUid = locationUid;
       console.log('取得したLocation UID:', locationUid);
+      if (maxParticipants !== null) {
+        event.maxParticipants = maxParticipants;
+        console.log('取得したMax Participants:', maxParticipants);
+      } else {
+        console.warn('Max Participants は取得できませんでしたが、Location UID は取得できました。');
+        // maxParticipants が必須でない場合はこのままでも良い
+      }
     } else {
       throw new Error('Location UIDの抽出に失敗しました。データ構造を確認してください。');
     }
@@ -224,12 +240,11 @@ async function fetchLocationUid() {
 
 
 async function fetchEventDetails() {
-  if (effectiveMode.value === 'edit' && props.eventUrlProp) { // props.mode を effectiveMode.value に、props.eventUrlToEdit を props.eventUrlProp に変更
+  if (effectiveMode.value === 'edit' && props.eventUrlProp) {
     loading.value = true;
     errorMessage.value = '';
     try {
-      const decodedEventUrl = decodeURIComponent(props.eventUrlProp); // props.eventUrlToEdit を props.eventUrlProp に変更
-      // バックエンドの特定イベント取得APIを呼び出す
+      const decodedEventUrl = decodeURIComponent(props.eventUrlProp);
       const response = await fetch(`${API_BASE_URL}/events/${encodeURIComponent(decodedEventUrl)}`);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'イベント情報の取得に失敗しました。' }));
@@ -243,6 +258,7 @@ async function fetchEventDetails() {
         event.startDate = formatDateForInput(foundEvent.startDate);
         event.endDate = formatDateForInput(foundEvent.endDate);
         event.locationUid = foundEvent.locationUid || '';
+        event.maxParticipants = foundEvent.maxParticipants !== undefined ? foundEvent.maxParticipants : null; // 編集時にもmaxParticipantsをセット
       } else {
         errorMessage.value = '編集対象のイベントが見つかりませんでした。';
       }
@@ -267,10 +283,11 @@ async function handleSubmit() {
 
   const payload = {
     eventUrl: event.eventUrl,
-    name: event.name || null, // 名前が空の場合はnullを送信
+    name: event.name || null,
     startDate: event.startDate,
     endDate: event.endDate,
-    locationUid: event.locationUid || null, // locationUidをペイロードに追加
+    locationUid: event.locationUid || null,
+    maxParticipants: event.maxParticipants,
   };
 
   try {

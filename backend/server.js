@@ -145,6 +145,7 @@ app.get('/api/events', async (req, res) => {
         e.start_date,
         e.end_date,
         e.location_uid,
+        e.max_participants,
         (
           SELECT COUNT(DISTINCT ues.username)
           FROM user_event_selections ues
@@ -169,6 +170,7 @@ app.get('/api/events', async (req, res) => {
       startDate: row.start_date || null,
       endDate: row.end_date || null,
       locationUid: row.location_uid || null,
+      maxParticipants: row.max_participants,
       submittedUsersCount: parseInt(row.submittedUsersCount, 10) || 0,
       hasCurrentUserSubmittedStatus: !!row.currentUserHasSubmittedStatus
     }));
@@ -193,17 +195,17 @@ app.get('/api/events/:eventUrlEncoded', async (req, res) => {
   }
 
   try {
-    const [rows] = await dbPool.execute('SELECT event_url, name, start_date, end_date, location_uid FROM events WHERE event_url = ?', [eventUrl]);
+    const [rows] = await dbPool.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants FROM events WHERE event_url = ?', [eventUrl]);
     if (rows.length === 0) {
       return res.status(404).json({ error: '指定されたイベントURLが見つかりません。' });
     }
     const event = rows[0];
     res.json({
       ...event,
-      // DBから 'YYYY-MM-DD' 形式の文字列で取得されるため、そのまま使用
       startDate: event.start_date || null,
       endDate: event.end_date || null,
-      locationUid: event.location_uid || null
+      locationUid: event.location_uid || null,
+      maxParticipants: event.max_participants
     });
     console.log('Fetched event:', event);
   } catch (dbError) {
@@ -214,13 +216,12 @@ app.get('/api/events/:eventUrlEncoded', async (req, res) => {
 
 // POST /api/events - 新しいイベントを登録
 app.post('/api/events', async (req, res) => {
-  const { eventUrl, name, startDate, endDate, locationUid } = req.body;
+  const { eventUrl, name, startDate, endDate, locationUid, maxParticipants } = req.body;
 
   if (!eventUrl || !startDate || !endDate) {
     return res.status(400).json({ error: 'eventUrl, startDate, endDate are required fields.' });
   }
 
-  // 簡単なバリデーション (日付形式など、より厳密なバリデーションも検討)
   if (new Date(startDate) > new Date(endDate)) {
     return res.status(400).json({ error: '終了日は開始日以降に設定してください。' });
   }
@@ -228,22 +229,21 @@ app.post('/api/events', async (req, res) => {
   let connection;
   try {
     connection = await dbPool.getConnection();
-    const query = 'INSERT INTO events (event_url, name, start_date, end_date, location_uid) VALUES (?, ?, ?, ?, ?)';
-    await connection.execute(query, [eventUrl, name || null, startDate, endDate, locationUid || null]);
+    const query = 'INSERT INTO events (event_url, name, start_date, end_date, location_uid, max_participants) VALUES (?, ?, ?, ?, ?, ?)'; // Add max_participants
+    await connection.execute(query, [eventUrl, name || null, startDate, endDate, locationUid || null, maxParticipants === undefined ? null : maxParticipants]); // Handle maxParticipants
 
-    // 登録されたイベント情報を返す
-    const [newEventRows] = await connection.execute('SELECT event_url, name, start_date, end_date, location_uid FROM events WHERE event_url = ?', [eventUrl]);
-    const newEvent = newEventRows[0]; // newEvent[0] から newEventRows[0] に修正、そして newEvent に代入
+    const [newEventRows] = await connection.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants FROM events WHERE event_url = ?', [eventUrl]); // Add max_participants
+    const newEvent = newEventRows[0];
     res.status(201).json({
-        ...newEvent, // newEvent[0] から newEvent に修正
-        // DBから 'YYYY-MM-DD' 形式の文字列で取得されるため、そのまま使用
+        ...newEvent,
         startDate: newEvent.start_date || null,
         endDate: newEvent.end_date || null,
-        locationUid: newEvent.location_uid || null
+        locationUid: newEvent.location_uid || null,
+        maxParticipants: newEvent.max_participants
     });
-    console.log('Created new event:', newEvent); // newEvent[0] から newEvent に修正
+    console.log('Created new event:', newEvent);
   } catch (dbError) {
-    if (connection) await connection.rollback(); // トランザクションを使用する場合はロールバック
+    if (connection) await connection.rollback();
     console.error('DB Error creating event:', dbError);
     if (dbError.code === 'ER_DUP_ENTRY') {
       return res.status(409).json({ error: 'このイベントURLは既に使用されています。' });
@@ -255,7 +255,6 @@ app.post('/api/events', async (req, res) => {
 });
 
 // PUT /api/events/:eventUrlEncoded - イベント情報を更新
-// eventUrl はエンコードされている可能性があるため、デコードして使用
 app.put('/api/events/:eventUrlEncoded', async (req, res) => {
   const eventUrlEncoded = req.params.eventUrlEncoded;
   let eventUrl;
@@ -266,10 +265,10 @@ app.put('/api/events/:eventUrlEncoded', async (req, res) => {
     return res.status(400).json({ error: 'Invalid event URL encoding.' });
   }
 
-  const { name, startDate, endDate } = req.body;
+  const { name, startDate, endDate, maxParticipants, locationUid } = req.body; // Add maxParticipants and locationUid
 
-  if (!startDate && !endDate && name === undefined) {
-    return res.status(400).json({ error: '更新する情報 (name, startDate, or endDate) が必要です。' });
+  if (!startDate && !endDate && name === undefined && maxParticipants === undefined && locationUid === undefined) { // Update condition
+    return res.status(400).json({ error: '更新する情報 (name, startDate, endDate, locationUid, or maxParticipants) が必要です。' });
   }
   if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
     return res.status(400).json({ error: '終了日は開始日以降に設定してください。' });
@@ -279,11 +278,12 @@ app.put('/api/events/:eventUrlEncoded', async (req, res) => {
   try {
     connection = await dbPool.getConnection();
     
-    // 更新するフィールドを動的に構築
     const fieldsToUpdate = {};
     if (name !== undefined) fieldsToUpdate.name = name;
     if (startDate) fieldsToUpdate.start_date = startDate;
     if (endDate) fieldsToUpdate.end_date = endDate;
+    if (locationUid !== undefined) fieldsToUpdate.location_uid = locationUid; // Add locationUid
+    if (maxParticipants !== undefined) fieldsToUpdate.max_participants = maxParticipants; // Add maxParticipants
 
     const fieldEntries = Object.entries(fieldsToUpdate);
     if (fieldEntries.length === 0) {
@@ -292,7 +292,7 @@ app.put('/api/events/:eventUrlEncoded', async (req, res) => {
 
     const setClause = fieldEntries.map(([key]) => `${key} = ?`).join(', ');
     const values = fieldEntries.map(([, value]) => value);
-    values.push(eventUrl); // WHERE句のevent_url
+    values.push(eventUrl);
 
     const query = `UPDATE events SET ${setClause} WHERE event_url = ?`;
     const [result] = await connection.execute(query, values);
@@ -301,16 +301,16 @@ app.put('/api/events/:eventUrlEncoded', async (req, res) => {
       return res.status(404).json({ error: '指定されたイベントURLが見つかりません。' });
     }
 
-    const [updatedEventRows] = await connection.execute('SELECT event_url, name, start_date, end_date, location_uid FROM events WHERE event_url = ?', [eventUrl]);
-    const updatedEvent = updatedEventRows[0]; // updatedEvent[0] から updatedEventRows[0] に修正、そして updatedEvent に代入
+    const [updatedEventRows] = await connection.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants FROM events WHERE event_url = ?', [eventUrl]); // Add max_participants
+    const updatedEvent = updatedEventRows[0];
     res.json({
-        ...updatedEvent, // updatedEvent[0] から updatedEvent に修正
-        // DBから 'YYYY-MM-DD' 形式の文字列で取得されるため、そのまま使用
+        ...updatedEvent,
         startDate: updatedEvent.start_date || null,
         endDate: updatedEvent.end_date || null,
-        locationUid: updatedEvent.location_uid || null // locationUidも返すように統一
+        locationUid: updatedEvent.location_uid || null,
+        maxParticipants: updatedEvent.max_participants // Add this line
     });
-    console.log('Updated event:', updatedEvent); // updatedEvent[0] から updatedEvent に修正
+    console.log('Updated event:', updatedEvent);
   } catch (dbError) {
     if (connection) await connection.rollback();
     console.error('DB Error updating event:', dbError);
@@ -437,17 +437,17 @@ app.get('/api/events/:eventUrlEncoded/summary', async (req, res) => {
   try {
     connection = await dbPool.getConnection();
 
-    // 1. イベント基本情報を取得 (name, start_date, end_date, location_uid)
-    const [eventRows] = await connection.execute('SELECT name, start_date, end_date, location_uid FROM events WHERE event_url = ?', [eventUrl]);
+    // 1. イベント基本情報を取得 (name, start_date, end_date, location_uid, max_participants)
+    const [eventRows] = await connection.execute('SELECT name, start_date, end_date, location_uid, max_participants FROM events WHERE event_url = ?', [eventUrl]); // max_participants を追加
     if (eventRows.length === 0) {
       return res.status(404).json({ error: '指定されたイベントURLが見つかりません。' });
     }
     const eventDetails = eventRows[0];
     const eventName = eventDetails.name;
-    // dateStrings: true により、eventDetails.start_date と eventDetails.end_date は 'YYYY-MM-DD' 文字列のはず
     const eventStartDate = eventDetails.start_date || null;
     const eventEndDate = eventDetails.end_date || null;
     const locationUid = eventDetails.location_uid;
+    const maxParticipants = eventDetails.max_participants; // max_participants を取得
 
     if (!eventStartDate || !eventEndDate || !locationUid) {
         return res.status(404).json({ error: 'イベントの日付または場所情報が不足しており、集計を生成できません。' });
@@ -517,10 +517,11 @@ app.get('/api/events/:eventUrlEncoded/summary', async (req, res) => {
     allUsers.sort();
 
     res.json({
-      eventName: eventName || extractEventNameFromUrl(eventUrl), // URLからフォールバック
+      eventName: eventName || extractEventNameFromUrl(eventUrl),
       eventStartDate,
       eventEndDate,
-      allEventTimeSlotsUTC, // 外部APIから取得したスロットリスト
+      maxParticipants, // レスポンスに追加
+      allEventTimeSlotsUTC,
       allUsers,
       userSelectionsMap
     });

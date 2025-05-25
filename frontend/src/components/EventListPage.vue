@@ -59,6 +59,9 @@
             <span v-else-if="event.hasCurrentUserSubmittedStatus === true" class="status-badge status-badge-submitted ml-2 flex-shrink-0">✅ 入力済み</span>
           </div>
           <p class="event-card-details"><strong>対象期間:</strong> {{ formatDate(event.startDate) }} 〜 {{ formatDate(event.endDate) }}</p>
+          <p v-if="event.maxParticipants" class="event-card-details">
+            <strong>チーム人数:</strong> {{ event.maxParticipants }}人
+          </p>
           <p class="event-card-url">
             <strong>URL:</strong> <a :href="event.eventUrl" target="_blank" @click.stop class="event-url-link">{{ event.eventUrl }}</a>
           </p>
@@ -151,6 +154,7 @@ async function fetchEvents() {
         ...event,
         eventUrl: event.event_url,
         locationUid: event.location_uid,
+        maxParticipants: event.maxParticipants, // Ensure this is mapped
         hasCurrentUserSubmittedStatus: event.hasCurrentUserSubmittedStatus,
         submittedUsersCount: event.submittedUsersCount,
     }));
