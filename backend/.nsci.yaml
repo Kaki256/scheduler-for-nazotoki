@@ -1,0 +1,12 @@
+name: backend
+type: proc
+proc:
+  build: npm install
+  start: npm run start
+  port: 4000
+env:
+  # NeoShowcaseで発行されるDB接続情報を利用
+  DB_HOST: ${NS_MARIADB_HOSTNAME}
+  DB_USER: ${NS_MARIADB_USERNAME}
+  DB_PASS: ${NS_MARIADB_PASSWORD}
+  DB_NAME: ${NS_MARIADB_DATABASE}

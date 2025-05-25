@@ -6,15 +6,16 @@ const axios = require('axios');
 const cors = require('cors');
 const mysql = require('mysql2/promise');
 const fetch = require('node-fetch'); // node-fetch を追加
+const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 // --- データベース接続設定 (各自の環境に合わせて変更してください) ---
 const dbPool = mysql.createPool({
-  host: process.env.NS_MARIADB_HOSTNAME || 'localhost',
-  user: process.env.NS_MARIADB_USER || 'scheduler_app_user',
-  password: process.env.NS_MARIADB_PASSWORD || 'password',
-  database: process.env.NS_MARIADB_DATABASE || 'schedule_app_db',
+  host: process.env.DB_HOST || 'localhost',
+  user: process.env.DB_USER || 'scheduler_app_user',
+  password: process.env.DB_PASS || 'password',
+  database: process.env.DB_NAME || 'schedule_app_db',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
@@ -36,6 +37,53 @@ async function testDbConnection() {
 }
 testDbConnection();
 
+// Database setup function
+async function setupDatabase() {
+  const dbConfig = {
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'scheduler_nazotoki',
+    multipleStatements: true // Allow multiple statements for running SQL script
+  };
+
+  let connection;
+  try {
+    // Connect without specifying a database first to create it if it doesn't exist
+    connection = await mysql.createConnection({
+      host: dbConfig.host,
+      user: dbConfig.user,
+      password: dbConfig.password,
+      multipleStatements: true
+    });
+
+    await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\`;`);
+    await connection.query(`USE \`${dbConfig.database}\`;`);
+    console.log(`Database '${dbConfig.database}' is ready or created.`);
+
+    // Read and execute db.sql
+    const sqlScript = fs.readFileSync('./db.sql', 'utf8');
+    await connection.query(sqlScript);
+    console.log('db.sql script executed successfully.');
+
+  } catch (error) {
+    console.error('Error setting up database:', error);
+    process.exit(1); // Exit if database setup fails
+  } finally {
+    if (connection) {
+      await connection.end();
+    }
+  }
+}
+
+// Call the setupDatabase function at the start
+setupDatabase().then(() => {
+  // Start your Express server or other application logic here
+  // For example:
+  // app.listen(port, () => {
+  //   console.log(`Server listening at http://localhost:${port}`);
+  // });
+});
 
 app.use(cors()); // 開発中は全てのオリジンを許可
 app.use(express.json()); // リクエストボディのJSONをパース
