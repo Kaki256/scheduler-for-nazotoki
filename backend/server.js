@@ -7,7 +7,7 @@ const cors = require('cors');
 const mysql = require('mysql2/promise');
 const fetch = require('node-fetch'); // node-fetch を追加
 const app = express();
-const PORT = process.env.NS_MARIADB_PORT || 3001;
+const PORT = process.env.PORT || 3001;
 
 // --- データベース接続設定 (各自の環境に合わせて変更してください) ---
 const dbPool = mysql.createPool({
