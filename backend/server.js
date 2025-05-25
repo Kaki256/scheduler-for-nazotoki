@@ -106,20 +106,27 @@ async function startServer() {
 app.use(cors()); // 開発中は全てのオリジンを許可
 app.use(express.json()); // リクエストボディのJSONをパース
 
-// GET /api/get-username - ユーザー名を取得
-app.get('/api/get-username', (req, res) => {
-  // 一般的なプロキシヘッダーからユーザー名を試みる
+app.use((req, res, next) => {
   const username =
     req.get("X-Forwarded-User") || req.get("X-Showcase-User") || null;
-
+  req._constructedUsername = username;
   if (username) {
     console.log(`[AuthAPI] Username found in header: ${username}`);
-    res.json({ username });
-  } else {
+  }
+  else {
     console.log('[AuthAPI] Username not found in headers. Consider environment variable or other fallback.');
-    // フォールバックとして環境変数や固定値を返すことも検討できます。
-    // ここでは、簡単のため、ヘッダーに見つからない場合はnullを返します。
-    res.json({ username: null }); 
+  }
+
+  next();
+});
+
+// GET /api/get-username - ユーザー名を取得
+app.get('/api/get-username', (req, res) => {
+  if (req._constructedUsername) {
+    console.log(`[AuthAPI] Returning username: ${req._constructedUsername}`);
+    return res.json({ username: req._constructedUsername });
+  } else {
+    res.json({ username: null });
   }
 });
 
