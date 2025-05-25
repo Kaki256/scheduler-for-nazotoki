@@ -5,6 +5,16 @@
       <p class="text-gray-600 mt-2">参加したいイベントを選択するか、新しいイベントを登録しましょう。</p>
     </header>
 
+    <!-- TODO: 後で消す -->
+    <div class="mb-6 p-4 bg-yellow-100 border border-yellow-300 rounded-lg">
+      <label for="username-input" class="block text-sm font-medium text-yellow-800 mb-1">仮ユーザー名:</label>
+      <div class="flex items-center gap-2">
+        <input type="text" id="username-input" v-model="currentUsername" class="input-field flex-grow" placeholder="ユーザー名を入力 (例: user1)">
+        <button @click="fetchEventsWithNewUser" class="button-secondary py-2 px-3 text-sm">ユーザー名で再取得</button>
+      </div>
+      <p class="text-xs text-yellow-700 mt-1">これは、イベントの参加状況表示とソートのテスト用です。</p>
+    </div>
+
     <div class="mb-6 text-right">
       <button
         @click="navigateToCreateEvent"
@@ -29,7 +39,7 @@
       <p>{{ errorMessage }}</p>
     </div>
 
-    <div v-if="!loading && events.length === 0 && !errorMessage" class="no-events-container">
+    <div v-if="!loading && sortedEvents.length === 0 && !errorMessage" class="no-events-container">
       <svg class="no-events-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
         <path vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2zm3-8V3m12 4h-3" />
       </svg>
@@ -37,16 +47,23 @@
       <p class="mt-1 text-sm text-gray-500">上のボタンから新しいイベントを登録できます。</p>
     </div>
 
-    <div v-if="events.length > 0" class="events-grid">
-      <div v-for="event in events" :key="event.eventUrl" 
+    <div v-if="sortedEvents.length > 0" class="events-grid">
+      <div v-for="event in sortedEvents" :key="event.eventUrl"
           class="event-card">
         <div class="event-card-content">
-          <h2 class="event-card-title" :title="event.name || extractEventName(event.eventUrl)">
-            {{ event.name || extractEventName(event.eventUrl) }}
-          </h2>
+          <div class="flex justify-between items-start mb-2">
+            <h2 class="event-card-title flex-grow" :title="event.name || extractEventName(event.eventUrl)">
+              {{ event.name || extractEventName(event.eventUrl) }}
+            </h2>
+            <span v-if="event.hasCurrentUserSubmittedStatus === false" class="status-badge status-badge-unsubmitted ml-2 flex-shrink-0">⚠️ 未入力</span>
+            <span v-else-if="event.hasCurrentUserSubmittedStatus === true" class="status-badge status-badge-submitted ml-2 flex-shrink-0">✅ 入力済み</span>
+          </div>
           <p class="event-card-details"><strong>対象期間:</strong> {{ formatDate(event.startDate) }} 〜 {{ formatDate(event.endDate) }}</p>
           <p class="event-card-url">
             <strong>URL:</strong> <a :href="event.eventUrl" target="_blank" @click.stop class="event-url-link">{{ event.eventUrl }}</a>
+          </p>
+          <p v-if="typeof event.submittedUsersCount === 'number'" class="text-sm text-gray-600 mt-1">
+            👤 {{ event.submittedUsersCount }} 人が入力済み
           </p>
         </div>
         <div class="event-card-actions">
@@ -75,13 +92,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
 
 const events = ref([]);
 const loading = ref(true);
 const errorMessage = ref('');
 const router = useRouter();
+const currentUsername = ref('test-user'); // 仮のユーザー名
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
 
@@ -119,21 +137,25 @@ async function fetchEvents() {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const response = await fetch(`${API_BASE_URL}/events`); // ★ バックエンドAPIを呼び出す
+    const headers = {};
+    if (currentUsername.value) {
+      headers['X-Forwarded-User'] = currentUsername.value;
+    }
+    const response = await fetch(`${API_BASE_URL}/events`, { headers });
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ message: "イベントリストの取得に失敗しました。" }));
       throw new Error(errorData.message || `サーバーエラー (${response.status})`);
     }
     const data = await response.json();
-    // APIからのデータ形式に合わせて調整 (event_url, startDate, endDate)
     events.value = data.map(event => ({
-        ...event, // name もあればそのまま展開
-        eventUrl: event.event_url, // キー名を合わせる
-        locationUid: event.location_uid, // ★ locationUid のコメントアウトを解除
+        ...event,
+        eventUrl: event.event_url,
+        locationUid: event.location_uid,
+        hasCurrentUserSubmittedStatus: event.hasCurrentUserSubmittedStatus,
+        submittedUsersCount: event.submittedUsersCount,
     }));
 
     if (events.value.length === 0 && !errorMessage.value) {
-      // errorMessage.value = "現在登録されているイベントはありません。"; // 必要に応じて表示
       console.log("No events found from API.");
     }
   } catch (err) {
@@ -144,6 +166,46 @@ async function fetchEvents() {
     loading.value = false;
   }
 }
+
+const fetchEventsWithNewUser = () => {
+  if (!currentUsername.value) {
+    alert("ユーザー名を入力してください。");
+    return;
+  }
+  fetchEvents(); // 新しいユーザー名でイベントを再取得
+};
+
+const sortedEvents = computed(() => {
+  return [...events.value].sort((a, b) => {
+    // 1. 未入力のイベントを優先 (false が先)
+    if (a.hasCurrentUserSubmittedStatus === false && b.hasCurrentUserSubmittedStatus !== false) {
+      return -1;
+    }
+    if (a.hasCurrentUserSubmittedStatus !== false && b.hasCurrentUserSubmittedStatus === false) {
+      return 1;
+    }
+
+    // 2. 開始日の降順 (新しいものが先)
+    const dateA = a.startDate ? new Date(a.startDate) : null;
+    const dateB = b.startDate ? new Date(b.startDate) : null;
+    if (dateA && dateB) {
+      if (dateA > dateB) return -1;
+      if (dateA < dateB) return 1;
+    } else if (dateA) { // b.startDate が null の場合、a を先に
+      return -1;
+    } else if (dateB) { // a.startDate が null の場合、b を先に
+      return 1;
+    }
+
+    // 3. イベント名の昇順
+    const nameA = (a.name || extractEventName(a.eventUrl) || '').toLowerCase();
+    const nameB = (b.name || extractEventName(b.eventUrl) || '').toLowerCase();
+    if (nameA < nameB) return -1;
+    if (nameA > nameB) return 1;
+
+    return 0;
+  });
+});
 
 // frontend/src/components/EventListPage.vue (script setup部分)
 function navigateToSchedule(eventUrl, startDate, endDate, locationUid, eventDisplayName) { // eventDisplayName を引数で受け取る
@@ -514,13 +576,190 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
-/* 既存の scoped style */
-.truncate {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.event-card {
+  background-color: #ffffff;
+  border-radius: 12px; /* 少し丸みを強く */
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1); /* 影を少し強調 */
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+  overflow: hidden; /* Ensure content respects border radius */
 }
-.break-all {
-  word-break: break-all;
+.event-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
+}
+
+.event-card-content {
+  padding: 20px; /* パディングを少し増やす */
+}
+
+.event-card-title {
+  font-size: 1.35em; /* 少し大きく */
+  font-weight: 700; /* 太く */
+  color: #334155; /* Tailwind slate-700 */
+  margin-bottom: 10px; /* 少しマージン調整 */
+  line-height: 1.3;
+  /* 長いタイトルがカード幅を超えるのを防ぐ */
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+
+.event-card-details,
+.event-card-url {
+  font-size: 0.9em;
+  color: #475569; /* Tailwind slate-600 */
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+.event-card-url strong,
+.event-card-details strong {
+  color: #334155; /* Tailwind slate-700 */
+}
+
+.event-url-link {
+  color: #4f46e5; /* Tailwind indigo-600 */
+  text-decoration: none;
+  word-break: break-all; /* URLが長い場合に改行 */
+}
+
+.event-url-link:hover {
+  text-decoration: underline;
+  color: #3730a3; /* Tailwind indigo-800 */
+}
+
+.event-card-actions {
+  background-color: #f8fafc; /* Tailwind slate-50 */
+  padding: 16px 20px;
+  border-top: 1px solid #e2e8f0; /* Tailwind slate-200 */
+  display: flex;
+  flex-wrap: wrap; /* ボタンが多い場合に折り返す */
+  gap: 10px; /* ボタン間のスペース */
+  justify-content: flex-start; /* ボタンを左寄せに */
+}
+
+.button-primary,
+.button-secondary,
+.button-edit,
+.button-delete,
+.button-create-event {
+  padding: 10px 18px; /* パディング調整 */
+  border-radius: 8px;
+  font-weight: 500;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.button-icon {
+  width: 1.2em;
+  height: 1.2em;
+  margin-right: 0.5em;
+}
+
+
+.button-primary {
+  background-color: #4f46e5; /* Tailwind indigo-600 */
+  color: white;
+}
+.button-primary:hover {
+  background-color: #3730a3; /* Tailwind indigo-800 */
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
+}
+
+.button-secondary {
+  background-color: #64748b; /* Tailwind slate-500 */
+  color: white;
+}
+.button-secondary:hover {
+  background-color: #475569; /* Tailwind slate-600 */
+  box-shadow: 0 2px 8px rgba(100, 116, 139, 0.3);
+}
+
+.button-edit {
+  background-color: #f59e0b; /* Tailwind amber-500 */
+  color: white;
+}
+.button-edit:hover {
+  background-color: #d97706; /* Tailwind amber-600 */
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+}
+
+.button-delete {
+  background-color: #ef4444; /* Tailwind red-500 */
+  color: white;
+}
+.button-delete:hover {
+  background-color: #dc2626; /* Tailwind red-600 */
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+}
+.button-delete:disabled {
+  background-color: #9ca3af; /* Tailwind gray-400 */
+  cursor: not-allowed;
+}
+
+.status-badge {
+  padding: 1.2em 0.8em;
+  border-radius: 0.375rem; /* rounded-md */
+  font-size: 0.8em;
+  font-weight: 600;
+  white-space: nowrap; /* Ensure badge text stays on one line */
+}
+
+.status-badge-unsubmitted {
+  background-color: #fffbeb; /* Tailwind yellow-50 */
+  color: #b45309; /* Tailwind yellow-700 */
+  border: 1px solid #fef3c7; /* Tailwind yellow-200 */
+}
+
+.status-badge-submitted {
+  background-color: #ecfdf5; /* Tailwind green-50 */
+  color: #065f46; /* Tailwind green-700 */
+  border: 1px solid #d1fae5; /* Tailwind green-200 */
+}
+
+.input-field {
+  /* Tailwind: shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md */
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  border: 1px solid #d1d5db; /* border-gray-300 */
+  border-radius: 0.375rem; /* rounded-md */
+  padding: 0.5rem 0.75rem; /* py-2 px-3 */
+  font-size: 0.875rem; /* sm:text-sm */
+  line-height: 1.25rem;
+  width: 100%; /* block w-full */
+}
+.input-field:focus {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  border-color: #6366f1; /* focus:border-indigo-500 */
+  box-shadow: 0 0 0 2px #6366f180; /* focus:ring-indigo-500 (with opacity) */
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .events-grid {
+    grid-template-columns: 1fr; /* 1列表示 */
+  }
+  .event-card-actions {
+    flex-direction: column; /* ボタンを縦積みに */
+    align-items: stretch; /* ボタン幅をカードに合わせる */
+  }
+  .action-buttons-group {
+    margin-left: 0;
+    width: 100%;
+    display: flex;
+    justify-content: space-between; /* 編集と削除を両端に */
+  }
+  .action-buttons-group > .button-edit,
+  .action-buttons-group > .button-delete {
+    flex-grow: 1; /* ボタンがスペースを分け合う */
+  }
 }
 </style>
