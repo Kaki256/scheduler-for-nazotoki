@@ -25,20 +25,6 @@ const dbPool = mysql.createPool({
 
 const PORT = process.env.PORT || 3000;
 
-// データベース接続テスト (オプション)
-async function testDbConnection() {
-  try {
-    const connection = await dbPool.getConnection();
-    console.log('Successfully connected to the database.');
-    connection.release();
-  } catch (error) {
-    console.error('Failed to connect to the database:', error.message);
-    // アプリケーション起動時にDB接続エラーがあれば、プロセスを終了させるか、
-    // エラー処理戦略に応じて対応してください。
-    process.exit(1); 
-  }
-}
-
 // Database setup function
 async function setupDatabase() {
   const dbConfig = {
@@ -123,10 +109,9 @@ app.use(express.json()); // リクエストボディのJSONをパース
 // GET /api/get-username - ユーザー名を取得
 app.get('/api/get-username', (req, res) => {
   // 一般的なプロキシヘッダーからユーザー名を試みる
-  const username = req.headers['x-forwarded-user'] || 
-                   req.headers['x-authentik-username'] || // Authentik common header
-                   req.headers['remote-user'] || // Apache, Nginx common header
-                   null; // 他のヘッダーも必要に応じて追加
+  const username = req.headers['X-Forwarded-User'] ||
+                   req.headers['X-Showcase-User'] ||
+                   null;
 
   if (username) {
     console.log(`[AuthAPI] Username found in header: ${username}`);
