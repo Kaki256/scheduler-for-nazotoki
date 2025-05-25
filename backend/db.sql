@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS events (
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
     location_uid VARCHAR(255) NULL,
+    max_participants INT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -18,5 +19,5 @@ CREATE TABLE IF NOT EXISTS user_event_selections (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY unique_user_event (username, event_url),
-    FOREIGN KEY (event_url) REFERENCES events(event_url) -- 必要に応じて外部キー制約を追加
+    FOREIGN KEY (event_url) REFERENCES events(event_url)
 );
