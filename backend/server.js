@@ -149,16 +149,17 @@ app.get('/api/events', async (req, res) => {
         (
           SELECT COUNT(DISTINCT ues.username)
           FROM user_event_selections ues
-          WHERE ues.event_url = e.event_url
+          WHERE ues.event_url = e.event_url AND ues.deleted_at IS NULL -- Exclude logically deleted selections
         ) AS submittedUsersCount,
         (
           SELECT EXISTS (
             SELECT 1
             FROM user_event_selections ues_user
-            WHERE ues_user.event_url = e.event_url AND ues_user.username = ?
+            WHERE ues_user.event_url = e.event_url AND ues_user.username = ? AND ues_user.deleted_at IS NULL -- Exclude logically deleted selections
           )
         ) AS currentUserHasSubmittedStatus
       FROM events e
+      WHERE e.deleted_at IS NULL -- Exclude logically deleted events
       ORDER BY e.created_at DESC
     `;
 
@@ -195,7 +196,8 @@ app.get('/api/events/:eventUrlEncoded', async (req, res) => {
   }
 
   try {
-    const [rows] = await dbPool.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants FROM events WHERE event_url = ?', [eventUrl]);
+    // Modify query to exclude logically deleted events
+    const [rows] = await dbPool.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants FROM events WHERE event_url = ? AND deleted_at IS NULL', [eventUrl]);
     if (rows.length === 0) {
       return res.status(404).json({ error: '指定されたイベントURLが見つかりません。' });
     }
@@ -232,10 +234,11 @@ app.post('/api/events', async (req, res) => {
   try {
     connection = await dbPool.getConnection();
     // Use normalizedEventUrl for database operations
+    // Ensure new events are not logically deleted by default (deleted_at is NULL)
     const query = 'INSERT INTO events (event_url, name, start_date, end_date, location_uid, max_participants) VALUES (?, ?, ?, ?, ?, ?)';
     await connection.execute(query, [normalizedEventUrl, name || null, startDate, endDate, locationUid || null, maxParticipants === undefined ? null : maxParticipants]);
 
-    const [newEventRows] = await connection.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants FROM events WHERE event_url = ?', [normalizedEventUrl]);
+    const [newEventRows] = await connection.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants FROM events WHERE event_url = ? AND deleted_at IS NULL', [normalizedEventUrl]);
     const newEvent = newEventRows[0];
     res.status(201).json({
         ...newEvent,
@@ -260,19 +263,22 @@ app.post('/api/events', async (req, res) => {
 // PUT (update) an existing event by URL
 app.put('/api/events/:eventUrlEncoded', async (req, res) => {
   const eventUrlEncoded = req.params.eventUrlEncoded;
-  let eventUrl;
+  let originalEventUrl;
   try {
-    eventUrl = decodeURIComponent(eventUrlEncoded);
-    console.log('Decoded event URL for update:', eventUrl);
+    originalEventUrl = decodeURIComponent(eventUrlEncoded);
   } catch (e) {
-    return res.status(400).json({ error: 'Invalid event URL encoding.' });
+    console.error('Error decoding event URL for update:', e);
+    return res.status(400).json({ error: 'Invalid event URL encoding for update.' });
   }
 
-  const { name, startDate, endDate, maxParticipants, locationUid } = req.body; // Add maxParticipants and locationUid
+  const { name, startDate, endDate, maxParticipants, locationUid, eventUrl: newEventUrl } = req.body;
 
-  if (!startDate && !endDate && name === undefined && maxParticipants === undefined && locationUid === undefined) { // Update condition
-    return res.status(400).json({ error: '更新する情報 (name, startDate, endDate, locationUid, or maxParticipants) が必要です。' });
+  // Basic validation: at least one field to update must be provided.
+  if (name === undefined && startDate === undefined && endDate === undefined && maxParticipants === undefined && locationUid === undefined && newEventUrl === undefined) {
+    return res.status(400).json({ error: '更新するデータがありません。少なくとも一つのフィールドを指定してください。' });
   }
+  
+  // Validate date range if both are provided
   if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
     return res.status(400).json({ error: '終了日は開始日以降に設定してください。' });
   }
@@ -280,40 +286,67 @@ app.put('/api/events/:eventUrlEncoded', async (req, res) => {
   let connection;
   try {
     connection = await dbPool.getConnection();
+    await connection.beginTransaction();
+
+    // Check if the event to update exists and is not logically deleted
+    const [existingEventRows] = await connection.execute('SELECT * FROM events WHERE event_url = ? AND deleted_at IS NULL', [originalEventUrl]);
+    if (existingEventRows.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ error: '更新対象のイベントが見つからないか、既に削除されています。' });
+    }
+    const existingEvent = existingEventRows[0];
+
+    const updateFields = {};
+    if (name !== undefined) updateFields.name = name;
+    if (startDate !== undefined) updateFields.start_date = startDate;
+    if (endDate !== undefined) updateFields.end_date = endDate;
+    if (maxParticipants !== undefined) updateFields.max_participants = maxParticipants === null ? null : Number(maxParticipants);
+    if (locationUid !== undefined) updateFields.location_uid = locationUid;
     
-    const fieldsToUpdate = {};
-    if (name !== undefined) fieldsToUpdate.name = name;
-    if (startDate) fieldsToUpdate.start_date = startDate;
-    if (endDate) fieldsToUpdate.end_date = endDate;
-    if (locationUid !== undefined) fieldsToUpdate.location_uid = locationUid; // Add locationUid
-    if (maxParticipants !== undefined) fieldsToUpdate.max_participants = maxParticipants; // Add maxParticipants
-
-    const fieldEntries = Object.entries(fieldsToUpdate);
-    if (fieldEntries.length === 0) {
-        return res.status(400).json({ error: '更新する有効なフィールドがありません。' });
+    let finalEventUrl = originalEventUrl;
+    if (newEventUrl !== undefined && newEventUrl !== originalEventUrl) {
+        const normalizedNewEventUrl = normalizeEventUrl(newEventUrl);
+        // Check if the new URL already exists (and is not deleted)
+        const [urlConflictRows] = await connection.execute('SELECT event_url FROM events WHERE event_url = ? AND deleted_at IS NULL', [normalizedNewEventUrl]);
+        if (urlConflictRows.length > 0) {
+            await connection.rollback();
+            return res.status(409).json({ error: '指定された新しいイベントURLは既に使用されています。' });
+        }
+        updateFields.event_url = normalizedNewEventUrl;
+        finalEventUrl = normalizedNewEventUrl;
     }
 
-    const setClause = fieldEntries.map(([key]) => `${key} = ?`).join(', ');
-    const values = fieldEntries.map(([, value]) => value);
-    values.push(eventUrl);
+    if (Object.keys(updateFields).length > 0) {
+        const fieldPlaceholders = Object.keys(updateFields).map(key => `${key} = ?`).join(', ');
+        const fieldValues = Object.values(updateFields);
 
-    const query = `UPDATE events SET ${setClause} WHERE event_url = ?`;
-    const [result] = await connection.execute(query, values);
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ error: '指定されたイベントURLが見つかりません。' });
+        const updateQuery = `UPDATE events SET ${fieldPlaceholders} WHERE event_url = ? AND deleted_at IS NULL`;
+        await connection.execute(updateQuery, [...fieldValues, originalEventUrl]);
+    }
+    
+    // If event_url was changed, update user_event_selections as well
+    if (finalEventUrl !== originalEventUrl) {
+        const updateUserSelectionsQuery = 'UPDATE user_event_selections SET event_url = ? WHERE event_url = ?';
+        await connection.execute(updateUserSelectionsQuery, [finalEventUrl, originalEventUrl]);
     }
 
-    const [updatedEventRows] = await connection.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants FROM events WHERE event_url = ?', [eventUrl]); // Add max_participants
+    await connection.commit();
+
+    const [updatedEventRows] = await connection.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants FROM events WHERE event_url = ? AND deleted_at IS NULL', [finalEventUrl]);
+    if (updatedEventRows.length === 0) {
+        // This case should ideally not happen if the update was successful and not a URL change to an already deleted one.
+        return res.status(404).json({ error: '更新後のイベントが見つかりません。'});
+    }
     const updatedEvent = updatedEventRows[0];
+    
     res.json({
         ...updatedEvent,
         startDate: updatedEvent.start_date || null,
         endDate: updatedEvent.end_date || null,
         locationUid: updatedEvent.location_uid || null,
-        maxParticipants: updatedEvent.max_participants // Add this line
+        maxParticipants: updatedEvent.max_participants
     });
-    console.log('Updated event:', updatedEvent);
+
   } catch (dbError) {
     if (connection) await connection.rollback();
     console.error('DB Error updating event:', dbError);
@@ -323,43 +356,40 @@ app.put('/api/events/:eventUrlEncoded', async (req, res) => {
   }
 });
 
-// DELETE an event by URL
+// DELETE (logically) an event by URL
 app.delete('/api/events/:eventUrlEncoded', async (req, res) => {
   const eventUrlEncoded = req.params.eventUrlEncoded;
   let eventUrl;
   try {
     eventUrl = decodeURIComponent(eventUrlEncoded);
-    console.log('Decoded event URL for deletion:', eventUrl);
   } catch (e) {
-    return res.status(400).json({ error: 'Invalid event URL encoding.' });
+    console.error('Error decoding event URL for delete:', e);
+    return res.status(400).json({ error: 'Invalid event URL encoding for delete.' });
   }
 
   let connection;
   try {
     connection = await dbPool.getConnection();
-    await connection.beginTransaction(); // トランザクション開始
+    await connection.beginTransaction();
 
-    // まず関連する user_event_selections テーブルのデータを削除
-    await connection.execute('DELETE FROM user_event_selections WHERE event_url = ?', [eventUrl]);
+    // Logically delete the event
+    const [eventUpdateResult] = await connection.execute('UPDATE events SET deleted_at = CURRENT_TIMESTAMP WHERE event_url = ? AND deleted_at IS NULL', [eventUrl]);
 
-    // 次にeventsテーブルからイベントを削除
-    const [result] = await connection.execute('DELETE FROM events WHERE event_url = ?', [eventUrl]);
-
-    if (result.affectedRows === 0) {
-      // イベントが見つからなかった場合でも、user_event_selections の削除は試みている可能性があるため、
-      // ここでロールバックして404を返すのが適切か、あるいは user_event_selections の削除結果に依らず204を返すか検討。
-      // ここではイベント自体が見つからなければ404とする。
+    if (eventUpdateResult.affectedRows === 0) {
       await connection.rollback();
-      return res.status(404).json({ error: '指定されたイベントURLが見つかりません。' });
+      return res.status(404).json({ error: '削除対象のイベントが見つからないか、既に削除されています。' });
     }
 
-    await connection.commit(); // トランザクション確定
-    res.status(204).send(); // No Content
-    console.log('Deleted event and associated user_event_selections:', eventUrl);
+    // Logically delete related user_event_selections
+    await connection.execute('UPDATE user_event_selections SET deleted_at = CURRENT_TIMESTAMP WHERE event_url = ? AND deleted_at IS NULL', [eventUrl]);
+
+    await connection.commit();
+    res.status(200).json({ message: 'イベントおよび関連する選択情報が論理削除されました。' });
+
   } catch (dbError) {
-    if (connection) await connection.rollback(); // エラー時ロールバック
-    console.error('DB Error deleting event and associated user_event_selections:', dbError);
-    res.status(500).json({ error: 'データベースでのイベント及び関連ユーザー選択の削除中にエラーが発生しました。' });
+    if (connection) await connection.rollback();
+    console.error('DB Error logically deleting event:', dbError);
+    res.status(500).json({ error: 'データベースでのイベント論理削除中にエラーが発生しました。' });
   } finally {
     if (connection) connection.release();
   }
@@ -367,94 +397,95 @@ app.delete('/api/events/:eventUrlEncoded', async (req, res) => {
 
 // ★★★ END: Event API Endpoints ★★★
 
-// Helper function to normalize event URL by removing query parameters and hash fragments
-// and ensuring it ends with a trailing slash.
-function normalizeEventUrl(urlString) {
+// ★★★ START: User Event Selections API Endpoints ★★★
+
+// GET user's event selections for a specific event
+app.get('/api/users/:username/events/:eventUrlEncoded/selections', async (req, res) => {
+  const { username, eventUrlEncoded } = req.params;
+  let eventUrl;
   try {
-    const url = new URL(urlString);
-    url.search = ''; // Remove query parameters
-    url.hash = '';   // Remove hash fragment
-    let path = url.pathname;
-    if (!path.endsWith('/')) {
-      path += '/';
-    }
-    // Reconstruct the URL with the potentially modified path
-    url.pathname = path;
-    return url.toString();
+    eventUrl = decodeURIComponent(eventUrlEncoded);
   } catch (e) {
-    console.error('Error normalizing URL:', urlString, e);
-    // Fallback for non-URL strings or other errors:
-    // If it's a simple string and doesn't have query/hash, try to append slash.
-    if (typeof urlString === 'string' && !urlString.includes('?') && !urlString.includes('#')) {
-      if (!urlString.endsWith('/')) {
-        return urlString + '/';
-      }
-      return urlString;
+    return res.status(400).json({ error: 'Invalid event URL encoding.' });
+  }
+
+  // First, check if the event itself is logically deleted
+  try {
+    const [eventRows] = await dbPool.execute('SELECT deleted_at FROM events WHERE event_url = ?', [eventUrl]);
+    if (eventRows.length === 0 || eventRows[0].deleted_at) {
+      return res.status(404).json({ error: 'イベントが見つからないか、削除されています。' });
     }
-    return urlString; // Return original if complex or error
+  } catch (dbError) {
+    console.error('DB Error checking event status for selections:', dbError);
+    return res.status(500).json({ error: 'イベント情報の確認中にエラーが発生しました。' });
   }
-}
-
-// Helper function to fetch schedule slots from external API (similar to /api/get-schedule)
-async function fetchEventSlotsForSummary(eventUrl, startDate, endDate, locationUid) {
-  if (!eventUrl || !startDate || !endDate || !locationUid) {
-    throw new Error('eventUrl, startDate, endDate, and locationUid are required for fetching event slots');
-  }
-
-  const urlParts = eventUrl.match(/escape\.id\/org\/([^\/]+)\/event\/([^\/]+)/);
-  if (!urlParts || urlParts.length < 3) {
-    throw new Error('Invalid event URL format. Could not extract orgSlug and eventSlug.');
-  }
-  const orgSlug = urlParts[1];
-  const eventSlug = urlParts[2];
-
-  const apiPayload = {
-    orgSlug: orgSlug,
-    eventSlug: eventSlug,
-    dateFrom: startDate,
-    dateTo: endDate,
-    locationUid: locationUid,
-    locationAreaUid: null
-  };
-
-  const targetApiUrl = 'https://escape.id/api/showcase/event/slots';
-  console.log(`[SummaryHelper] Fetching schedule from API: ${targetApiUrl} with payload:`, JSON.stringify(apiPayload));
 
   try {
-    const apiResponse = await axios.post(targetApiUrl, apiPayload, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/plain, */*',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
-        'Referer': eventUrl,
-        'Origin': 'https://escape.id',
-      }
-    });
-
-    const allEventTimeSlotsUTC = [];
-    if (apiResponse.data && apiResponse.data.dates) {
-      apiResponse.data.dates.forEach(dateEntry => {
-        if (dateEntry.slots) {
-          dateEntry.slots.forEach(slot => {
-            allEventTimeSlotsUTC.push(slot.startAt); // Store original UTC start time
-          });
-        }
-      });
+    const [rows] = await dbPool.execute(
+      'SELECT selections_json FROM user_event_selections WHERE username = ? AND event_url = ? AND deleted_at IS NULL',
+      [username, eventUrl]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: '指定されたユーザーとイベントの組み合わせに対する選択情報が見つかりません。' });
     }
-    allEventTimeSlotsUTC.sort(); // Ensure chronological order
-    return allEventTimeSlotsUTC;
-  } catch (error) {
-    console.error(`[SummaryHelper] Error fetching schedule from API ${targetApiUrl}:`, error.message);
-    if (error.response) {
-      console.error('[SummaryHelper] API Error Response Status:', error.response.status);
-      console.error('[SummaryHelper] API Error Response Data:', error.response.data);
-    }
-    throw new Error('Failed to fetch event slots from external API for summary.');
+    res.json(JSON.parse(rows[0].selections_json));
+  } catch (dbError) {
+    console.error('DB Error fetching user event selections:', dbError);
+    res.status(500).json({ error: 'データベースからのユーザー選択情報取得中にエラーが発生しました。' });
   }
-}
+});
 
+// POST or PUT (upsert) user's event selections
+app.post('/api/users/:username/events/:eventUrlEncoded/selections', async (req, res) => {
+  const { username, eventUrlEncoded } = req.params;
+  const { selections } = req.body;
+  let eventUrl;
 
-// GET /api/events/:eventUrlEncoded/summary - イベントの出欠集計情報を取得
+  try {
+    eventUrl = decodeURIComponent(eventUrlEncoded);
+  } catch (e) {
+    return res.status(400).json({ error: 'Invalid event URL encoding.' });
+  }
+
+  if (!selections) {
+    return res.status(400).json({ error: 'selections is a required field.' });
+  }
+
+  let connection;
+  try {
+    connection = await dbPool.getConnection();
+    await connection.beginTransaction();
+
+    // First, check if the event itself exists and is not logically deleted
+    const [eventRows] = await connection.execute('SELECT event_url FROM events WHERE event_url = ? AND deleted_at IS NULL', [eventUrl]);
+    if (eventRows.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'イベントが見つからないか、削除されています。このイベントには登録できません。' });
+    }
+
+    // Upsert logic: Try to update if exists and not deleted, otherwise insert.
+    // We also undelete if it was logically deleted by setting deleted_at to NULL.
+    const selectionsJson = JSON.stringify(selections);
+    const upsertQuery = `
+      INSERT INTO user_event_selections (username, event_url, selections_json, deleted_at)
+      VALUES (?, ?, ?, NULL)
+      ON DUPLICATE KEY UPDATE selections_json = ?, deleted_at = NULL
+    `;
+    await connection.execute(upsertQuery, [username, eventUrl, selectionsJson, selectionsJson]);
+    
+    await connection.commit();
+    res.status(200).json({ message: 'ユーザーの選択情報が正常に保存されました。' });
+
+  } catch (dbError) {
+    if (connection) await connection.rollback();
+    console.error('DB Error saving user event selections:', dbError);
+    res.status(500).json({ error: 'データベースへのユーザー選択情報保存中にエラーが発生しました。' });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+// GET summary of event selections (for EventSummaryPage)
 app.get('/api/events/:eventUrlEncoded/summary', async (req, res) => {
   const eventUrlEncoded = req.params.eventUrlEncoded;
   let eventUrl;
@@ -464,121 +495,75 @@ app.get('/api/events/:eventUrlEncoded/summary', async (req, res) => {
     return res.status(400).json({ error: 'Invalid event URL encoding.' });
   }
 
-  let connection;
+  // First, check if the event itself is logically deleted
   try {
-    connection = await dbPool.getConnection();
-
-    // 1. イベント基本情報を取得 (name, start_date, end_date, location_uid, max_participants)
-    const [eventRows] = await connection.execute('SELECT name, start_date, end_date, location_uid, max_participants FROM events WHERE event_url = ?', [eventUrl]); // max_participants を追加
-    if (eventRows.length === 0) {
-      return res.status(404).json({ error: '指定されたイベントURLが見つかりません。' });
+    const [eventRows] = await dbPool.execute('SELECT name, start_date, end_date, max_participants, location_uid, deleted_at FROM events WHERE event_url = ?', [eventUrl]);
+    if (eventRows.length === 0 || eventRows[0].deleted_at) {
+      return res.status(404).json({ error: 'イベントが見つからないか、削除されています。' });
     }
     const eventDetails = eventRows[0];
-    const eventName = eventDetails.name;
-    const eventStartDate = eventDetails.start_date || null;
-    const eventEndDate = eventDetails.end_date || null;
-    const locationUid = eventDetails.location_uid;
-    const maxParticipants = eventDetails.max_participants; // max_participants を取得
 
-    if (!eventStartDate || !eventEndDate || !locationUid) {
-        return res.status(404).json({ error: 'イベントの日付または場所情報が不足しており、集計を生成できません。' });
-    }
-
-    // 2. 外部APIからイベントの全日時スロットを取得
-    const allEventTimeSlotsUTC = await fetchEventSlotsForSummary(eventUrl, eventStartDate, eventEndDate, locationUid);
-    if (allEventTimeSlotsUTC.length === 0) {
-        console.warn(`[SummaryAPI] No time slots returned from external API for event: ${eventUrl}`);
-        // スロットがない場合でも、ユーザー選択は空かもしれないが処理は続ける
-    }
-
-    // 3. ユーザーごとの出欠情報を取得
-    const [selectionRows] = await connection.execute(
-      'SELECT username, selections_json FROM user_event_selections WHERE event_url = ?',
+    const [selectionRows] = await dbPool.execute(
+      'SELECT username, selections_json FROM user_event_selections WHERE event_url = ? AND deleted_at IS NULL',
       [eventUrl]
     );
 
-    const allUsers = [];
-    const userSelectionsMap = {}; // { username: { utcDateTime: status } }
-
-    selectionRows.forEach(row => {
-      if (row.username && !allUsers.includes(row.username)) {
-        allUsers.push(row.username);
-      }
-      try {
-        let selections;
-        if (typeof row.selections_json === 'string') {
-          // selections_json が文字列の場合 (古いデータや異なる保存形式の場合)
-          selections = JSON.parse(row.selections_json);
-        } else if (typeof row.selections_json === 'object' && row.selections_json !== null) {
-          // selections_json が既にオブジェクト/配列の場合 (mysql2 が JSON 型を適切にパースした場合)
-          selections = row.selections_json;
-        } else {
-          // null やその他の予期しない型の場合
-          console.warn(`[SummaryAPI] selections_json for user ${row.username}, event ${eventUrl} is not a string or valid object:`, row.selections_json);
-          selections = []; // デフォルトとして空配列を扱う
-        }
-
-        if (Array.isArray(selections)) {
-          if (!userSelectionsMap[row.username]) {
-            userSelectionsMap[row.username] = {};
-          }
-          selections.forEach(sel => {
-            if (sel && typeof sel.event_datetime_utc === 'string' && typeof sel.status === 'string') {
-              userSelectionsMap[row.username][sel.event_datetime_utc] = sel.status;
-            } else {
-              console.warn(`[SummaryAPI] Invalid selection item format for user ${row.username}, event ${eventUrl}:`, sel);
-            }
-          });
-        } else {
-          console.warn(`[SummaryAPI] Processed selections_json is not an array for user ${row.username}, event ${eventUrl}. Value:`, selections);
-          // ユーザーマップに空のオブジェクトを確保しておく
-          if (row.username && !userSelectionsMap[row.username]) {
-            userSelectionsMap[row.username] = {};
-          }
-        }
-      } catch (processError) {
-        // JSON.parse の失敗、またはその他の予期せぬエラー
-        console.error(`[SummaryAPI] Error processing selections_json for user ${row.username}, event ${eventUrl}:`, processError);
-        // エラーが発生した場合でも、そのユーザーの選択は空として処理を続行する
-        if (row.username && !userSelectionsMap[row.username]) {
-            userSelectionsMap[row.username] = {};
-        }
-      }
-    });
-    allUsers.sort();
+    const userSelections = selectionRows.map(row => ({
+      username: row.username,
+      selections: JSON.parse(row.selections_json)
+    }));
 
     res.json({
-      eventName: eventName || extractEventNameFromUrl(eventUrl),
-      eventStartDate,
-      eventEndDate,
-      maxParticipants, // レスポンスに追加
-      allEventTimeSlotsUTC,
-      allUsers,
-      userSelectionsMap
+      eventName: eventDetails.name,
+      startDate: eventDetails.start_date,
+      endDate: eventDetails.end_date,
+      maxParticipants: eventDetails.max_participants,
+      locationUid: eventDetails.location_uid,
+      userSelections
     });
-    console.log(`[SummaryAPI] Successfully generated summary for event: ${eventUrl}`);
 
-  } catch (error) {
-    console.error(`[SummaryAPI] Error generating summary for event ${eventUrl}:`, error);
-    res.status(500).json({ error: 'イベント集計の生成中にエラーが発生しました。' });
-  } finally {
-    if (connection) connection.release();
+  } catch (dbError) {
+    console.error('DB Error fetching event summary:', dbError);
+    res.status(500).json({ error: 'データベースからのイベント概要取得中にエラーが発生しました。' });
   }
 });
 
-// URLからイベント名を抽出する簡単なヘルパー (server.js内でのみ使用)
-function extractEventNameFromUrl(url) {
-  try {
-    const pathSegments = new URL(url).pathname.split('/');
-    const eventSegment = pathSegments.filter(Boolean).pop();
-    if (eventSegment) {
-      return eventSegment.replace(/-/g, ' ').replace(/_/g, ' ');
-    }
-    return 'イベント';
-  } catch (e) {
-    return 'イベント';
+
+// ★★★ END: User Event Selections API Endpoints ★★★
+
+// ★★★ START: External API Proxy (escape.id) ★★★
+
+const EXTERNAL_API_BASE_URL = 'https://escape.id/api/showcase';
+
+// POST /api/fetch-html - 外部URLからHTMLを取得
+app.post('/api/fetch-html', async (req, res) => {
+  const { url } = req.body;
+  if (!url) {
+    return res.status(400).json({ error: 'URLが必要です。' });
   }
-}
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_REQUEST_TIMEOUT);
+
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      console.error(`Failed to fetch external URL: ${url}, Status: ${response.status}`);
+      return res.status(response.status).json({ error: `外部URLの取得に失敗しました: ${response.statusText}` });
+    }
+    const htmlText = await response.text();
+    res.json({ html: htmlText });
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      console.error(`Request to external URL timed out: ${url}`);
+      return res.status(504).json({ error: '外部URLへのリクエストがタイムアウトしました。' });
+    }
+    console.error(`Error fetching external URL: ${url}`, error);
+    res.status(500).json({ error: '外部HTMLの取得中にサーバーエラーが発生しました。' });
+  }
+});
 
 // --- スケジュール関連のエンドポイント ---
 
@@ -758,34 +743,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-app.post('/api/fetch-html', async (req, res) => {
-  const { url } = req.body;
-  if (!url) {
-    return res.status(400).json({ error: 'URLが必要です。' });
-  }
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_REQUEST_TIMEOUT);
-
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      console.error(`Failed to fetch external URL: ${url}, Status: ${response.status}`);
-      return res.status(response.status).json({ error: `外部URLの取得に失敗しました: ${response.statusText}` });
-    }
-    const htmlText = await response.text();
-    res.json({ html: htmlText });
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      console.error(`Request to external URL timed out: ${url}`);
-      return res.status(504).json({ error: '外部URLへのリクエストがタイムアウトしました。' });
-    }
-    console.error(`Error fetching external URL: ${url}`, error);
-    res.status(500).json({ error: '外部HTMLの取得中にサーバーエラーが発生しました。' });
-  }
-});
+// ★★★ END: External API Proxy (escape.id) ★★★
 
 // サーバーの起動
 startServer();
