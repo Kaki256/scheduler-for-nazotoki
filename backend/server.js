@@ -121,6 +121,32 @@ app.use((req, res, next) => {
   next();
 });
 
+function normalizeEventUrl(urlString) {
+  try {
+    const url = new URL(urlString);
+    url.search = ''; // Remove query parameters
+    url.hash = '';   // Remove hash fragment
+    let path = url.pathname;
+    if (!path.endsWith('/')) {
+      path += '/';
+    }
+    // Reconstruct the URL with the potentially modified path
+    url.pathname = path;
+    return url.toString();
+  } catch (e) {
+    console.error('Error normalizing URL:', urlString, e);
+    // Fallback for non-URL strings or other errors:
+    // If it's a simple string and doesn't have query/hash, try to append slash.
+    if (typeof urlString === 'string' && !urlString.includes('?') && !urlString.includes('#')) {
+      if (!urlString.endsWith('/')) {
+        return urlString + '/';
+      }
+      return urlString;
+    }
+    return urlString; // Return original if complex or error
+  }
+}
+
 // GET /api/get-username - ユーザー名を取得
 app.get('/api/get-username', (req, res) => {
   if (req._constructedUsername) {
@@ -233,28 +259,64 @@ app.post('/api/events', async (req, res) => {
   let connection;
   try {
     connection = await dbPool.getConnection();
-    // Use normalizedEventUrl for database operations
-    // Ensure new events are not logically deleted by default (deleted_at is NULL)
-    const query = 'INSERT INTO events (event_url, name, start_date, end_date, location_uid, max_participants) VALUES (?, ?, ?, ?, ?, ?)';
-    await connection.execute(query, [normalizedEventUrl, name || null, startDate, endDate, locationUid || null, maxParticipants === undefined ? null : maxParticipants]);
+    await connection.beginTransaction();
 
-    const [newEventRows] = await connection.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants FROM events WHERE event_url = ? AND deleted_at IS NULL', [normalizedEventUrl]);
-    const newEvent = newEventRows[0];
-    res.status(201).json({
-        ...newEvent,
-        startDate: newEvent.start_date || null,
-        endDate: newEvent.end_date || null,
-        locationUid: newEvent.location_uid || null,
-        maxParticipants: newEvent.max_participants
-    });
-    console.log('Created new event with normalized URL:', newEvent);
+    // Check if an event with the same normalizedEventUrl already exists
+    const [existingEvents] = await connection.execute('SELECT event_url, deleted_at FROM events WHERE event_url = ?', [normalizedEventUrl]);
+
+    if (existingEvents.length > 0) {
+      const existingEvent = existingEvents[0];
+      if (existingEvent.deleted_at !== null) {
+        // Event exists but is logically deleted, so "undelete" and update it
+        const updateQuery = 'UPDATE events SET name = ?, start_date = ?, end_date = ?, location_uid = ?, max_participants = ?, deleted_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE event_url = ?';
+        await connection.execute(updateQuery, [
+          name || null,
+          startDate,
+          endDate,
+          locationUid || null,
+          maxParticipants === undefined ? null : maxParticipants,
+          normalizedEventUrl
+        ]);
+        await connection.commit();
+
+        const [updatedEventRows] = await connection.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants FROM events WHERE event_url = ?', [normalizedEventUrl]);
+        const updatedEvent = updatedEventRows[0];
+        return res.status(200).json({ // Return 200 OK as it's an update/undelete
+          ...updatedEvent,
+          startDate: updatedEvent.start_date || null,
+          endDate: updatedEvent.end_date || null,
+          locationUid: updatedEvent.location_uid || null,
+          maxParticipants: updatedEvent.max_participants
+        });
+      } else {
+        // Event exists and is active, so it's a conflict
+        await connection.rollback();
+        return res.status(409).json({ error: 'このイベントURLは既に使用されています。' });
+      }
+    } else {
+      // Event does not exist, so insert a new one
+      const insertQuery = 'INSERT INTO events (event_url, name, start_date, end_date, location_uid, max_participants) VALUES (?, ?, ?, ?, ?, ?)';
+      await connection.execute(insertQuery, [normalizedEventUrl, name || null, startDate, endDate, locationUid || null, maxParticipants === undefined ? null : maxParticipants]);
+      await connection.commit();
+
+      const [newEventRows] = await connection.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants FROM events WHERE event_url = ? AND deleted_at IS NULL', [normalizedEventUrl]);
+      const newEvent = newEventRows[0];
+      return res.status(201).json({
+          ...newEvent,
+          startDate: newEvent.start_date || null,
+          endDate: newEvent.end_date || null,
+          locationUid: newEvent.location_uid || null,
+          maxParticipants: newEvent.max_participants
+      });
+    }
   } catch (dbError) {
     if (connection) await connection.rollback();
-    console.error('DB Error creating event:', dbError);
+    console.error('DB Error processing POST /api/events:', dbError);
+    // ER_DUP_ENTRY should ideally be caught by the logic above, but as a fallback:
     if (dbError.code === 'ER_DUP_ENTRY') {
       return res.status(409).json({ error: 'このイベントURLは既に使用されています。' });
     }
-    res.status(500).json({ error: 'データベースへのイベント登録中にエラーが発生しました。' });
+    res.status(500).json({ error: 'データベースへのイベント登録または更新中にエラーが発生しました。' });
   } finally {
     if (connection) connection.release();
   }
@@ -495,45 +557,151 @@ app.get('/api/events/:eventUrlEncoded/summary', async (req, res) => {
     return res.status(400).json({ error: 'Invalid event URL encoding.' });
   }
 
-  // First, check if the event itself is logically deleted
+  let connection;
   try {
-    const [eventRows] = await dbPool.execute('SELECT name, start_date, end_date, max_participants, location_uid, deleted_at FROM events WHERE event_url = ?', [eventUrl]);
-    if (eventRows.length === 0 || eventRows[0].deleted_at) {
-      return res.status(404).json({ error: 'イベントが見つからないか、削除されています。' });
+    connection = await dbPool.getConnection();
+
+    // 1. イベント基本情報を取得 (name, start_date, end_date, location_uid, max_participants, deleted_at)
+    const [eventRows] = await connection.execute('SELECT name, start_date, end_date, location_uid, max_participants, deleted_at FROM events WHERE event_url = ?', [eventUrl]);
+    
+    if (eventRows.length === 0) {
+      return res.status(404).json({ error: '指定されたイベントURLのイベントが見つかりません。' });
     }
     const eventDetails = eventRows[0];
 
-    const [selectionRows] = await dbPool.execute(
+    if (eventDetails.deleted_at) {
+      // イベントが論理削除されている場合は、サマリーを返さずに404エラーとする
+      return res.status(404).json({ error: 'イベントが見つからないか、削除されています。' });
+    }
+    
+    const eventName = eventDetails.name;
+    const eventStartDate = eventDetails.start_date || null;
+    const eventEndDate = eventDetails.end_date || null;
+    const locationUid = eventDetails.location_uid;
+    const maxParticipants = eventDetails.max_participants;
+
+    if (!eventStartDate || !eventEndDate || !locationUid) {
+        console.warn(`[SummaryAPI] Event data incomplete for ${eventUrl}. Start: ${eventStartDate}, End: ${eventEndDate}, Location: ${locationUid}`);
+        // 必要な情報が欠けている場合はエラー
+        return res.status(404).json({ error: 'イベントの日付または場所情報が不足しており、集計を生成できません。' });
+    }
+
+    // 2. 外部APIからイベントの全日時スロットを取得
+    const allEventTimeSlotsUTC = await fetchEventSlotsForSummary(eventUrl, eventStartDate, eventEndDate, locationUid);
+    if (allEventTimeSlotsUTC.length === 0) {
+        // スロットがない場合でも警告を出し、処理は続ける（ユーザー選択が空である可能性があるため）
+        console.warn(`[SummaryAPI] No time slots returned from external API for event: ${eventUrl} between ${eventStartDate} and ${eventEndDate} for location ${locationUid}. This might be expected if the event has no slots in this period.`);
+    }
+
+    // 3. ユーザーごとの出欠情報を取得 (論理削除されていないもののみ)
+    const [selectionRows] = await connection.execute(
       'SELECT username, selections_json FROM user_event_selections WHERE event_url = ? AND deleted_at IS NULL',
       [eventUrl]
     );
 
-    const userSelections = selectionRows.map(row => ({
-      username: row.username,
-      selections: JSON.parse(row.selections_json)
-    }));
+    const allUsers = [];
+    const userSelectionsMap = {}; // { username: { utcDateTime: status } }
+
+    selectionRows.forEach(row => {
+      if (row.username && !allUsers.includes(row.username)) {
+        allUsers.push(row.username);
+      }
+      try {
+        let selections;
+        if (typeof row.selections_json === 'string') {
+          selections = JSON.parse(row.selections_json);
+        } else if (typeof row.selections_json === 'object' && row.selections_json !== null) {
+          selections = row.selections_json; // Already an object/array from DB
+        } else {
+          console.warn(`[SummaryAPI] selections_json for user ${row.username}, event ${eventUrl} is of unexpected type or null. Value:`, row.selections_json);
+          selections = null; 
+        }
+
+        // Ensure the user's map entry exists
+        if (!userSelectionsMap[row.username]) {
+          userSelectionsMap[row.username] = {};
+        }
+
+        if (Array.isArray(selections)) {
+          // This is the expected format based on /api/save-my-status and /api/load-my-status
+          // It's an array of objects: [{event_datetime_utc: "...", status: "..."}, ...]
+          selections.forEach(selectionEntry => {
+            if (selectionEntry && typeof selectionEntry.event_datetime_utc === 'string' && typeof selectionEntry.status === 'string') {
+              userSelectionsMap[row.username][selectionEntry.event_datetime_utc] = selectionEntry.status;
+            } else {
+              console.warn(`[SummaryAPI] Invalid or incomplete entry in selections_json array for user ${row.username}, event ${eventUrl}. Entry:`, selectionEntry);
+            }
+          });
+        } else if (typeof selections === 'object' && selections !== null) {
+          // This handles a potential legacy format where selections_json might be an object:
+          // { "YYYY-MM-DDTHH:mm:ss.sssZ": "status", ... }
+          // Or if the database/parsing somehow still produces a non-array object.
+          console.log(`[SummaryAPI] Processing selections_json as a direct object for user ${row.username}, event ${eventUrl}. This might be due to legacy data or an unexpected structure. Value:`, selections);
+          for (const [utcDateTime, status] of Object.entries(selections)) {
+            if (typeof utcDateTime === 'string' && typeof status === 'string') {
+              userSelectionsMap[row.username][utcDateTime] = status;
+            } else {
+              console.warn(`[SummaryAPI] Invalid entry in selections_json object for user ${row.username}, event ${eventUrl}. Key: ${utcDateTime}, Value: ${status}`);
+            }
+          }
+        } else {
+          // selections is null, undefined, or not an array/object after parsing.
+          // This case might occur if JSON.parse failed and returned null, or if row.selections_json was initially null/unexpected.
+          console.warn(`[SummaryAPI] selections_json for user ${row.username}, event ${eventUrl} is not in a recognized format (array or object) or is null/undefined after processing. Value:`, selections);
+          // userSelectionsMap[row.username] is already initialized as an empty object, so selections for this user will be empty.
+        }
+      } catch (processError) {
+        // JSON.parse の失敗、またはその他の予期せぬエラー
+        console.error(`[SummaryAPI] Error processing selections_json for user ${row.username}, event ${eventUrl}:`, processError);
+        // エラーが発生した場合でも、そのユーザーの選択は空として処理を続行する
+        if (row.username && !userSelectionsMap[row.username]) {
+            userSelectionsMap[row.username] = {};
+        }
+      }
+    });
+    allUsers.sort(); // ユーザー名をソート
 
     res.json({
-      eventName: eventDetails.name,
-      startDate: eventDetails.start_date,
-      endDate: eventDetails.end_date,
-      maxParticipants: eventDetails.max_participants,
-      locationUid: eventDetails.location_uid,
-      userSelections
+      eventName: eventName || extractEventNameFromUrl(eventUrl), // extractEventNameFromUrl は別途定義が必要
+      eventStartDate,
+      eventEndDate,
+      maxParticipants, // レスポンスに追加
+      allEventTimeSlotsUTC, // 取得した全スロット情報
+      allUsers,
+      userSelectionsMap
     });
+    console.log(`[SummaryAPI] Successfully generated summary for event: ${eventUrl}`);
 
-  } catch (dbError) {
-    console.error('DB Error fetching event summary:', dbError);
-    res.status(500).json({ error: 'データベースからのイベント概要取得中にエラーが発生しました。' });
+  } catch (error) {
+    // このブロックでキャッチされるのは、主にDB接続エラーや予期せぬ内部エラー
+    console.error(`[SummaryAPI] Error generating summary for event ${eventUrl}:`, error);
+    res.status(500).json({ error: 'イベント集計の生成中にエラーが発生しました。' });
+  } finally {
+    if (connection) connection.release();
   }
 });
 
+// URLからイベント名を抽出する簡単なヘルパー (server.js内でのみ使用)
+function extractEventNameFromUrl(url) {
+  try {
+    const pathSegments = new URL(url).pathname.split('/');
+    // 最後の空でないパスセグメントをイベント名候補とする
+    const eventSegment = pathSegments.filter(Boolean).pop(); 
+    if (eventSegment) {
+      // URLデコードし、ハイフンやアンダースコアをスペースに置換
+      return decodeURIComponent(eventSegment).replace(/-/g, ' ').replace(/_/g, ' ');
+    }
+    return 'イベント'; // デフォルト名
+  } catch (e) {
+    // URLパースエラーなどの場合
+    console.warn(`[extractEventNameFromUrl] Failed to parse URL or extract name: ${url}`, e);
+    return 'イベント'; // デフォルト名
+  }
+}
 
 // ★★★ END: User Event Selections API Endpoints ★★★
 
 // ★★★ START: External API Proxy (escape.id) ★★★
-
-const EXTERNAL_API_BASE_URL = 'https://escape.id/api/showcase';
 
 // POST /api/fetch-html - 外部URLからHTMLを取得
 app.post('/api/fetch-html', async (req, res) => {
@@ -546,7 +714,7 @@ app.post('/api/fetch-html', async (req, res) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_REQUEST_TIMEOUT);
 
-    const response = await fetch(url, { signal: controller.signal });
+    const response = await fetch(url, { signal: controller.signal }); // node-fetch を使用
     clearTimeout(timeoutId);
 
     if (!response.ok) {
@@ -564,6 +732,7 @@ app.post('/api/fetch-html', async (req, res) => {
     res.status(500).json({ error: '外部HTMLの取得中にサーバーエラーが発生しました。' });
   }
 });
+
 
 // --- スケジュール関連のエンドポイント ---
 
@@ -611,7 +780,6 @@ app.post('/api/get-schedule', async (req, res) => {
     if (apiResponse.data && apiResponse.data.dates) {
         res.json(apiResponse.data);
     } else {
-        console.warn('[API /get-schedule] External API response does not contain "dates" array. Data:', apiResponse.data);
         res.json({ dates: [] }); 
     }
 
@@ -727,23 +895,143 @@ app.get('/api/load-my-status', async (req, res) => {
   }
 });
 
+const EXTERNAL_REQUEST_TIMEOUT = 10000; // 10秒のタイムアウト
+
+// Helper function to fetch all event slots for the summary
+async function fetchEventSlotsForSummary(eventUrl, dateFrom, dateTo, locationUid) {
+  if (!eventUrl || !dateFrom || !dateTo || !locationUid) {
+    console.error('[fetchEventSlotsForSummary] Missing required parameters.');
+    return [];
+  }
+
+  const urlParts = eventUrl.match(/escape\.id\/org\/([^\/]+)\/event\/([^\/]+)/);
+  if (!urlParts || urlParts.length < 3) {
+    console.error('[fetchEventSlotsForSummary] Invalid event_url format:', eventUrl);
+    return [];
+  }
+  const orgSlug = urlParts[1];
+  const eventSlug = urlParts[2];
+
+  const apiPayload = {
+    orgSlug: orgSlug,
+    eventSlug: eventSlug,
+    dateFrom: dateFrom,
+    dateTo: dateTo,
+    locationUid: locationUid,
+    locationAreaUid: null
+  };
+
+  const targetApiUrl = 'https://escape.id/api/showcase/event/slots';
+  console.log(`[fetchEventSlotsForSummary] Fetching all slots from external API: ${targetApiUrl} with payload:`, JSON.stringify(apiPayload));
+
+  try {
+    const apiResponse = await axios.post(targetApiUrl, apiPayload, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/plain, */*',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+        'Referer': eventUrl,
+        'Origin': 'https://escape.id',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8'
+      },
+      timeout: 60000
+    });
+
+    console.log('[fetchEventSlotsForSummary] Successfully fetched from external API. Response status:', apiResponse.status);
+    // Log the entire API response data for inspection
+    console.log('[fetchEventSlotsForSummary] API Response Data:', JSON.stringify(apiResponse.data, null, 2));
+
+    const allSlotsUTC = [];
+    if (apiResponse.data && apiResponse.data.dates && Array.isArray(apiResponse.data.dates)) {
+      console.log(`[fetchEventSlotsForSummary] Processing ${apiResponse.data.dates.length} date entries.`);
+      apiResponse.data.dates.forEach((dateEntry, dateIndex) => {
+        console.log(`[fetchEventSlotsForSummary] Date Entry ${dateIndex}:`, JSON.stringify(dateEntry, null, 2));
+        if (dateEntry.slots && Array.isArray(dateEntry.slots)) {
+          console.log(`[fetchEventSlotsForSummary] Date Entry ${dateIndex} has ${dateEntry.slots.length} slots.`);
+          dateEntry.slots.forEach((slot, slotIndex) => {
+            // console.log(`[fetchEventSlotsForSummary] Date Entry ${dateIndex}, Slot ${slotIndex}:`, JSON.stringify(slot)); // This log seems to exist based on your output
+            let dateTimeUTC = null;
+            if (typeof slot === 'string') {
+              dateTimeUTC = slot;
+            } else if (typeof slot === 'object' && slot !== null) {
+              // Added DEBUG logs to investigate slot.startAt
+              if (Object.prototype.hasOwnProperty.call(slot, 'startAt')) {
+                console.log(`[DEBUG] slot.startAt raw value: "${slot.startAt}", type: ${typeof slot.startAt}`);
+              } else {
+                console.log(`[DEBUG] slot.startAt property does not exist or is not an own property.`);
+              }
+
+              if (slot.datetime_utc) {
+                dateTimeUTC = slot.datetime_utc;
+                console.log('[DEBUG] Using slot.datetime_utc');
+              } else if (slot.time_utc) {
+                dateTimeUTC = slot.time_utc;
+                console.log('[DEBUG] Using slot.time_utc');
+              } else if (slot.start_utc) {
+                dateTimeUTC = slot.start_utc;
+                console.log('[DEBUG] Using slot.start_utc');
+              } else if (slot.start_time) {
+                dateTimeUTC = slot.start_time;
+                console.log('[DEBUG] Using slot.start_time');
+              // MODIFIED Condition for slot.startAt to be more robust
+              } else if (Object.prototype.hasOwnProperty.call(slot, 'startAt') && typeof slot.startAt === 'string' && slot.startAt.length > 0) {
+                dateTimeUTC = slot.startAt;
+                console.log(`[DEBUG] Successfully assigned slot.startAt to dateTimeUTC. Value: "${dateTimeUTC}"`);
+              } else if (slot.time) {
+                dateTimeUTC = slot.time;
+                console.log('[DEBUG] Using slot.time');
+              } else if (slot.event_datetime_utc) {
+                dateTimeUTC = slot.event_datetime_utc;
+                console.log('[DEBUG] Using slot.event_datetime_utc');
+              } else {
+                console.log('[DEBUG] No applicable datetime property found in slot object.');
+              }
+            }
+
+            if (dateTimeUTC) {
+              allSlotsUTC.push(dateTimeUTC); // MODIFIED: Changed allSlots to allSlotsUTC
+            } else {
+              console.log('[fetchEventSlotsForSummary] Could not extract UTC datetime from slot object:', JSON.stringify(slot));
+              // Add a log here if startAt was present but didn't meet the new stricter condition
+              if (typeof slot === 'object' && slot !== null && Object.prototype.hasOwnProperty.call(slot, 'startAt') && !(typeof slot.startAt === 'string' && slot.startAt.length > 0)) {
+                console.log(`[DEBUG] slot.startAt was present but did not meet string/length criteria. Value: "${slot.startAt}", Type: ${typeof slot.startAt}`);
+              }
+            }
+          });
+        }
+      });
+    }
+    console.log('[fetchEventSlotsForSummary] Final extracted UTC slots:', JSON.stringify(allSlotsUTC));
+    return allSlotsUTC.sort();
+  } catch (error) {
+    console.error(`[fetchEventSlotsForSummary] Error fetching slots from external API ${targetApiUrl}. Payload: ${JSON.stringify(apiPayload)}`);
+    if (error.response) {
+      console.error('[fetchEventSlotsForSummary] External API Error Response Status:', error.response.status);
+      console.error('[fetchEventSlotsForSummary] External API Error Response Data:', JSON.stringify(error.response.data));
+      console.error('[fetchEventSlotsForSummary] External API Error Response Headers:', JSON.stringify(error.response.headers));
+    } else if (error.request) {
+      console.error('[fetchEventSlotsForSummary] External API No response received. Error Code:', error.code, 'Error Message:', error.message);
+    } else {
+      console.error('[fetchEventSlotsForSummary] Error setting up request:', error.message);
+    }
+    try {
+      console.error('[fetchEventSlotsForSummary] Full error object (stringified):', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    } catch (e) {
+      console.error('[fetchEventSlotsForSummary] Could not stringify full error object:', error);
+    }
+    return [];
+  }
+}
+
+// Catch-all route - MOVED HERE to be after all specific API routes
 app.get(/^.*$/, (req, res) => {
-  if (req.path.startsWith('/api/')) { 
-    return res.status(404).send('API endpoint not found'); 
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).send('API endpoint not found');
   }
   res.redirect('https://nazotoki-scheduler.trap.show/');
 });
 
-const EXTERNAL_REQUEST_TIMEOUT = 10000; // 10秒のタイムアウト
-
-// CORSミドルウェアの設定
-app.use(cors({
-  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'], // フロントエンドのオリジンを許可
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
-
-// ★★★ END: External API Proxy (escape.id) ★★★
-
+// Make sure this is at the end of the file, or at least after all route definitions
 // サーバーの起動
 startServer();
