@@ -211,18 +211,21 @@ const sortedEvents = computed(() => {
 });
 
 // frontend/src/components/EventListPage.vue (script setup部分)
-function navigateToSchedule(eventUrl, startDate, endDate, locationUid, eventDisplayName) { // eventDisplayName を引数で受け取る
-  console.log('Navigating to schedule with locationUid:', locationUid, 'and eventDisplayName:', eventDisplayName); // ★ ログで確認
-  router.push({
-    name: 'SchedulePage',
-    params: { eventUrlProp: encodeURIComponent(eventUrl) },
-    query: { 
-        startDate, 
-        endDate,
-        locationUid: locationUid || '', // locationUid をクエリパラメータに追加
-        eventDisplayName: eventDisplayName // eventDisplayName をクエリパラメータに追加
-    }
-  });
+function navigateToSchedule(eventUrl, startDate, endDate, locationUid, eventDisplayName) { 
+  console.log('Navigating to schedule with eventUrl:', eventUrl);
+
+  const urlParts = eventUrl.match(/escape\.id\/org\/([^\/]+)\/event\/([^\/]+)/);
+  if (urlParts && urlParts[1] && urlParts[2]) {
+    const orgSlug = urlParts[1];
+    const eventSlug = urlParts[2];
+    router.push({
+      name: 'SchedulePage',
+      params: { orgSlug: orgSlug, eventSlug: eventSlug } 
+    });
+  } else {
+    console.error('Could not extract orgSlug and eventSlug from URL:', eventUrl);
+    // Handle error
+  }
 }
 
 function navigateToCreateEvent() {

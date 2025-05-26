@@ -133,7 +133,7 @@ app.get('/api/get-username', (req, res) => {
 
 // ★★★ START: Event API Endpoints ★★★
 
-// GET /api/events - 登録されている全てのイベントを取得
+// GET all events
 app.get('/api/events', async (req, res) => {
   try {
     const currentUsername = req._constructedUsername;
@@ -182,7 +182,7 @@ app.get('/api/events', async (req, res) => {
   }
 });
 
-// GET /api/events/:eventUrlEncoded - 特定のイベントを取得
+// GET a specific event by URL
 app.get('/api/events/:eventUrlEncoded', async (req, res) => {
   const eventUrlEncoded = req.params.eventUrlEncoded;
   let eventUrl;
@@ -214,13 +214,15 @@ app.get('/api/events/:eventUrlEncoded', async (req, res) => {
   }
 });
 
-// POST /api/events - 新しいイベントを登録
+// POST a new event
 app.post('/api/events', async (req, res) => {
   const { eventUrl, name, startDate, endDate, locationUid, maxParticipants } = req.body;
 
   if (!eventUrl || !startDate || !endDate) {
     return res.status(400).json({ error: 'eventUrl, startDate, endDate are required fields.' });
   }
+
+  const normalizedEventUrl = normalizeEventUrl(eventUrl); // Normalize the event URL
 
   if (new Date(startDate) > new Date(endDate)) {
     return res.status(400).json({ error: '終了日は開始日以降に設定してください。' });
@@ -229,10 +231,11 @@ app.post('/api/events', async (req, res) => {
   let connection;
   try {
     connection = await dbPool.getConnection();
-    const query = 'INSERT INTO events (event_url, name, start_date, end_date, location_uid, max_participants) VALUES (?, ?, ?, ?, ?, ?)'; // Add max_participants
-    await connection.execute(query, [eventUrl, name || null, startDate, endDate, locationUid || null, maxParticipants === undefined ? null : maxParticipants]); // Handle maxParticipants
+    // Use normalizedEventUrl for database operations
+    const query = 'INSERT INTO events (event_url, name, start_date, end_date, location_uid, max_participants) VALUES (?, ?, ?, ?, ?, ?)';
+    await connection.execute(query, [normalizedEventUrl, name || null, startDate, endDate, locationUid || null, maxParticipants === undefined ? null : maxParticipants]);
 
-    const [newEventRows] = await connection.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants FROM events WHERE event_url = ?', [eventUrl]); // Add max_participants
+    const [newEventRows] = await connection.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants FROM events WHERE event_url = ?', [normalizedEventUrl]);
     const newEvent = newEventRows[0];
     res.status(201).json({
         ...newEvent,
@@ -241,7 +244,7 @@ app.post('/api/events', async (req, res) => {
         locationUid: newEvent.location_uid || null,
         maxParticipants: newEvent.max_participants
     });
-    console.log('Created new event:', newEvent);
+    console.log('Created new event with normalized URL:', newEvent);
   } catch (dbError) {
     if (connection) await connection.rollback();
     console.error('DB Error creating event:', dbError);
@@ -254,7 +257,7 @@ app.post('/api/events', async (req, res) => {
   }
 });
 
-// PUT /api/events/:eventUrlEncoded - イベント情報を更新
+// PUT (update) an existing event by URL
 app.put('/api/events/:eventUrlEncoded', async (req, res) => {
   const eventUrlEncoded = req.params.eventUrlEncoded;
   let eventUrl;
@@ -320,7 +323,7 @@ app.put('/api/events/:eventUrlEncoded', async (req, res) => {
   }
 });
 
-// DELETE /api/events/:eventUrlEncoded - イベントを削除
+// DELETE an event by URL
 app.delete('/api/events/:eventUrlEncoded', async (req, res) => {
   const eventUrlEncoded = req.params.eventUrlEncoded;
   let eventUrl;
@@ -363,6 +366,34 @@ app.delete('/api/events/:eventUrlEncoded', async (req, res) => {
 });
 
 // ★★★ END: Event API Endpoints ★★★
+
+// Helper function to normalize event URL by removing query parameters and hash fragments
+// and ensuring it ends with a trailing slash.
+function normalizeEventUrl(urlString) {
+  try {
+    const url = new URL(urlString);
+    url.search = ''; // Remove query parameters
+    url.hash = '';   // Remove hash fragment
+    let path = url.pathname;
+    if (!path.endsWith('/')) {
+      path += '/';
+    }
+    // Reconstruct the URL with the potentially modified path
+    url.pathname = path;
+    return url.toString();
+  } catch (e) {
+    console.error('Error normalizing URL:', urlString, e);
+    // Fallback for non-URL strings or other errors:
+    // If it's a simple string and doesn't have query/hash, try to append slash.
+    if (typeof urlString === 'string' && !urlString.includes('?') && !urlString.includes('#')) {
+      if (!urlString.endsWith('/')) {
+        return urlString + '/';
+      }
+      return urlString;
+    }
+    return urlString; // Return original if complex or error
+  }
+}
 
 // Helper function to fetch schedule slots from external API (similar to /api/get-schedule)
 async function fetchEventSlotsForSummary(eventUrl, startDate, endDate, locationUid) {

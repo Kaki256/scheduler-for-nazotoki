@@ -14,18 +14,10 @@ const routes = [
     component: EventListPage,
   },
   {
-    // :eventUrlProp(.*) はURL全体をパラメータとしてキャプチャ
-    // 例: /schedule/https%3A%2F%2Fescape.id%2Forg%2Ftumbleweed%2Fevent%2Fyawfwel%2F
-    path: '/schedule/:eventUrlProp(.*)',
+    path: '/schedule/:orgSlug/:eventSlug',
     name: 'SchedulePage',
     component: SchedulePage,
-    props: route => ({ 
-      initialEventUrl: decodeURIComponent(route.params.eventUrlProp),
-      initialStartDate: route.query.startDate, 
-      initialEndDate: route.query.endDate,
-      initialLocationUid: route.query.locationUid,
-      eventDisplayNameProp: route.query.eventDisplayName // ★ 追加
-    }),
+    props: true
   },
   {
     path: '/create-event',

@@ -233,24 +233,21 @@ import axios from 'axios'; // axios をインポート
 const route = useRoute();
 
 const props = defineProps({
-  eventDisplayNameProp: { type: String, default: 'イベント日程調整' },
-  initialEventUrl: { type: String, default: '' },
-  initialStartDate: { type: String, default: '' },
-  initialEndDate: { type: String, default: '' },
-  initialLocationUid: { type: String, default: '' }
+  orgSlug: { type: String, required: true },
+  eventSlug: { type: String, required: true }
 });
 
-const eventDisplayNameRef = ref(props.eventDisplayNameProp);
-const eventUrlRef = ref(props.initialEventUrl);
-const locationUidRef = ref(props.initialLocationUid);
+const eventDisplayNameRef = ref('');
+const eventUrlRef = ref('');
+const locationUidRef = ref('');
 
 const formatDateForInput = (date) => date.toISOString().split('T')[0];
 const todayForDefaults = new Date();
 const defaultStartDateValue = formatDateForInput(new Date(todayForDefaults)); // Today
 const defaultEndDateValue = formatDateForInput(new Date(new Date(todayForDefaults).setDate(todayForDefaults.getDate() + 6))); // 7 days from today
 
-const currentStartDate = ref(props.initialStartDate || defaultStartDateValue);
-const currentEndDate = ref(props.initialEndDate || defaultEndDateValue);
+const currentStartDate = ref('');
+const currentEndDate = ref('');
 
 const formattedRecruitmentPeriod = computed(() => {
   if (!currentStartDate.value || !currentEndDate.value) return '';
@@ -710,65 +707,81 @@ async function fetchScheduleData(eventUrl, dateFrom, dateTo, locationUid) {
   }
 }
 
+async function fetchEventDetailsBySlugs(orgSlug, eventSlug) {
+  // Reconstruct the full eventUrl from slugs
+  // Ensuring it ends with a trailing slash to match backend normalization
+  const eventUrl = `https://escape.id/org/${orgSlug}/event/${eventSlug}/`;
+  console.log(`[SchedulePage] Reconstructed eventUrl: ${eventUrl}`);
+
+  loading.value = true;
+  errorMessage.value = '';
+  // Use the already reconstructed and normalized eventUrl for eventUrlRef
+  eventUrlRef.value = eventUrl; 
+  console.log('[EventDetailsFetch] Using eventUrl for API call:', eventUrl);
+
+  try {
+    const encodedEventUrl = encodeURIComponent(eventUrl); // Use the normalized eventUrl
+    const response = await axios.get(`${API_BASE_URL}/events/${encodedEventUrl}`);
+    const eventDetails = response.data;
+
+    locationUidRef.value = eventDetails.locationUid;
+    currentStartDate.value = formatDateForInput(new Date(eventDetails.startDate));
+    currentEndDate.value = formatDateForInput(new Date(eventDetails.endDate));
+    eventDisplayNameRef.value = eventDetails.name;
+
+    // データ取得後、スケジュールデータをフェッチ
+    if (eventUrlRef.value && currentStartDate.value && currentEndDate.value && locationUidRef.value) {
+      await fetchScheduleData(eventUrlRef.value, currentStartDate.value, currentEndDate.value, locationUidRef.value);
+    }
+    initialLoadDone.value = true;
+  } catch (error) {
+    console.error('[EventDetailsFetch] Error fetching event details by reconstructed eventUrl:', error);
+    errorMessage.value = `イベント詳細の取得に失敗しました: ${error.message}`;
+  }
+  loading.value = false;
+}
+
+async function fetchEventDetailsBySlug(slug) {
+  loading.value = true;
+  errorMessage.value = '';
+  try {
+    // APIを呼び出してイベント詳細を取得 (eventUrl, locationUid, startDate, endDate, name を含む)
+    // このAPIエンドポイントはバックエンドに実装する必要があります。
+    // 例: GET /api/events/slug/:eventSlug
+    const response = await axios.get(`${API_BASE_URL}/events/slug/${slug}`);
+    const eventDetails = response.data;
+
+    eventUrlRef.value = eventDetails.eventUrl; // APIから取得したeventUrl
+    locationUidRef.value = eventDetails.locationUid;
+    currentStartDate.value = formatDateForInput(new Date(eventDetails.startDate));
+    currentEndDate.value = formatDateForInput(new Date(eventDetails.endDate));
+    eventDisplayNameRef.value = eventDetails.name;
+
+    // データ取得後、スケジュールデータをフェッチ
+    if (eventUrlRef.value && currentStartDate.value && currentEndDate.value && locationUidRef.value) {
+      await fetchScheduleData(eventUrlRef.value, currentStartDate.value, currentEndDate.value, locationUidRef.value);
+    }
+    initialLoadDone.value = true;
+  } catch (error) {
+    console.error('[EventDetailsFetch] Error fetching event details by slug:', error);
+    errorMessage.value = `イベント詳細の取得に失敗しました: ${error.message}`;
+    // 必要に応じて、ユーザーにエラーを通知し、ページを適切に処理する
+  }
+  loading.value = false;
+}
 
 async function initializePage() {
-  console.log('[Init] Initializing page...');
-  await fetchUsername(); // まずユーザー名を取得
-  // URLクエリパラメータから初期値を取得
-  const query = route.query;
-  console.log('[Init] Route query params:', query);
-
-  if (query.eventUrl) {
-    eventUrlRef.value = decodeURIComponent(query.eventUrl);
-    console.log('[Init] Event URL from query:', eventUrlRef.value);
-  }
-  // イベント名、日付、場所UIDは props またはクエリから取得するロジックが必要
-  // ここでは eventUrl があれば、それに基づいてイベント詳細を取得し、
-  // startDate, endDate, locationUid を設定する方が良いかもしれない。
-  // 現状は props や固定値に依存している部分がある。
-
-  // ひとまず、eventUrlRef があればスケジュール取得を試みる
-  if (eventUrlRef.value) {
-    // イベント詳細をAPIから取得して、startDate, endDate, locationUid を設定する
-    try {
-      console.log(`[Init] Fetching event details for: ${eventUrlRef.value}`);
-      const encodedEventUrl = encodeURIComponent(eventUrlRef.value);
-      const eventDetailsResponse = await axios.get(`${API_BASE_URL}/events/${encodedEventUrl}`);
-      if (eventDetailsResponse.data) {
-        const details = eventDetailsResponse.data;
-        console.log('[Init] Fetched event details:', details);
-        eventDisplayNameRef.value = details.name || 'イベント日程調整';
-        if (details.startDate) currentStartDate.value = details.startDate;
-        if (details.endDate) currentEndDate.value = details.endDate;
-        if (details.locationUid) locationUidRef.value = details.locationUid;
-        console.log('[Init] Updated refs from event details:', {
-          name: eventDisplayNameRef.value,
-          startDate: currentStartDate.value,
-          endDate: currentEndDate.value,
-          locationUid: locationUidRef.value
-        });
-      }
-    } catch (error) {
-      console.error('[Init] Error fetching event details:', error);
-      errorMessage.value = 'イベント詳細の取得に失敗しました。URLを確認してください。';
-      // return; // 詳細取得失敗時はスケジュール取得に進まない
-    }
-    // イベント詳細取得後、スケジュールデータを取得
-    // (locationUidRef などが設定された後で呼び出す)
-    if (locationUidRef.value) { // locationUidが取得できた場合のみ
-      await fetchScheduleData(eventUrlRef.value, currentStartDate.value, currentEndDate.value, locationUidRef.value);
-    } else if (!errorMessage.value) { // エラーメッセージがまだ設定されていなければ
-      errorMessage.value = 'イベントの場所情報(locationUid)が見つからないため、スケジュールを取得できません。';
-    }
-
+  await fetchUsername();
+  if (props.orgSlug && props.eventSlug) {
+    await fetchEventDetailsBySlugs(props.orgSlug, props.eventSlug);
   } else {
-    console.warn('[Init] Event URL is not available. Cannot fetch schedule.');
-    // errorMessage.value = 'イベントURLが指定されていません。'; // 必要に応じて
+    errorMessage.value = 'イベント情報が不足しています。';
+    loading.value = false;
   }
+  // initialLoadDone は fetchEventDetailsBySlug の中で設定される
 }
 
 onMounted(async () => {
-  console.log('[Mount] Component mounted. Initializing...');
   await initializePage();
   window.addEventListener('keydown', handleKeydown);
 });
@@ -778,12 +791,16 @@ onUnmounted(() => {
 });
 
 // Watch for changes in route query parameters to re-initialize if eventUrl changes
-watch(() => route.query.eventUrl, async (newEventUrl) => {
-  if (newEventUrl && decodeURIComponent(newEventUrl) !== eventUrlRef.value) {
-    console.log('[Watch] Event URL in route query changed. Re-initializing...');
-    await initializePage();
+watch(() => [props.orgSlug, props.eventSlug], async (newSlugs, oldSlugs) => {
+  const [newOrgSlug, newEventSlug] = newSlugs;
+  if (newOrgSlug && newEventSlug) {
+    console.log('[Watch Slugs] orgSlug or eventSlug changed, re-initializing with:', newOrgSlug, newEventSlug);
+    await fetchEventDetailsBySlugs(newOrgSlug, newEventSlug);
+    if (username.value && eventUrlRef.value) { // Ensure eventUrlRef is set
+      await loadUserStatus(username.value, eventUrlRef.value);
+    }
   }
-});
+}, { immediate: false }); // immediate: true だと onMounted と二重実行の可能性があるので注意
 
 // ユーザー名が変更されたら、そのユーザーの選択をロードする
 watch(username, async (newUsername, oldUsername) => {
