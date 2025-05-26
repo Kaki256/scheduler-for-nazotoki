@@ -92,10 +92,13 @@ import { useRouter } from 'vue-router';
 const props = defineProps({
   mode: {
     type: String,
-    // required: true, // 'create' or 'edit' // requiredを削除
-    default: '', // デフォルト値を設定して、未定義エラーを避ける
+    default: '', 
   },
-  eventUrlProp: { // For edit mode, changed from eventUrlToEdit
+  orgSlugProp: { // For edit mode, to construct the event URL
+    type: String,
+    default: null,
+  },
+  eventSlugProp: { // For edit mode, to construct the event URL
     type: String,
     default: null,
   },
@@ -116,12 +119,12 @@ const event = reactive({
 const loading = ref(false);
 const errorMessage = ref('');
 
-// modeが渡されない場合、eventUrlPropの有無で推測する
 const effectiveMode = computed(() => {
   if (props.mode) {
     return props.mode;
   }
-  return props.eventUrlProp ? 'edit' : 'create';
+  // If orgSlugProp and eventSlugProp are provided, assume edit mode
+  return props.orgSlugProp && props.eventSlugProp ? 'edit' : 'create';
 });
 
 const pageTitle = computed(() => effectiveMode.value === 'create' ? '新しいイベントを登録' : 'イベント情報を編集');
@@ -240,12 +243,15 @@ async function fetchLocationUid() {
 
 
 async function fetchEventDetails() {
-  if (effectiveMode.value === 'edit' && props.eventUrlProp) {
+  if (effectiveMode.value === 'edit' && props.orgSlugProp && props.eventSlugProp) {
     loading.value = true;
     errorMessage.value = '';
     try {
-      const decodedEventUrl = decodeURIComponent(props.eventUrlProp);
-      const response = await fetch(`${API_BASE_URL}/events/${encodeURIComponent(decodedEventUrl)}`);
+      // Reconstruct the event URL from slugs, ensuring it ends with a slash
+      const reconstructedEventUrl = `https://escape.id/org/${props.orgSlugProp}/event/${props.eventSlugProp}/`;
+      console.log('[EventFormPage] Reconstructed event URL for fetching details:', reconstructedEventUrl);
+      
+      const response = await fetch(`${API_BASE_URL}/events/${encodeURIComponent(reconstructedEventUrl)}`);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'イベント情報の取得に失敗しました。' }));
         throw new Error(errorData.error || `サーバーエラー (${response.status})`);
@@ -253,7 +259,7 @@ async function fetchEventDetails() {
       const foundEvent = await response.json();
       
       if (foundEvent) {
-        event.eventUrl = foundEvent.event_url;
+        event.eventUrl = foundEvent.event_url; // Store the normalized URL from backend
         event.name = foundEvent.name || '';
         event.startDate = formatDateForInput(foundEvent.startDate);
         event.endDate = formatDateForInput(foundEvent.endDate);
@@ -282,7 +288,7 @@ async function handleSubmit() {
   }
 
   const payload = {
-    eventUrl: event.eventUrl,
+    eventUrl: event.eventUrl, // This should be the full, normalized URL
     name: event.name || null,
     startDate: event.startDate,
     endDate: event.endDate,
@@ -292,17 +298,22 @@ async function handleSubmit() {
 
   try {
     let response;
-    if (effectiveMode.value === 'create') { // props.mode を effectiveMode.value に変更
+    if (effectiveMode.value === 'create') { 
       response = await fetch(`${API_BASE_URL}/events`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
     } else { // edit mode
-      response = await fetch(`${API_BASE_URL}/events/${encodeURIComponent(event.eventUrl)}`, {
+      // For PUT requests, the event URL in the path should be the one originally used to fetch the event.
+      // The payload.eventUrl might be different if normalization changed it, but the path param must match the existing record.
+      // However, our current setup normalizes on creation and expects normalized URLs for lookup.
+      // So, we use the (potentially already normalized) event.eventUrl from the form, which was set during fetchEventDetails.
+      const eventUrlForPath = encodeURIComponent(event.eventUrl); 
+      response = await fetch(`${API_BASE_URL}/events/${eventUrlForPath}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload), // eventUrlはpayloadに含まれるが、パスパラメータとしても使用
+        body: JSON.stringify(payload), // payload contains all fields, including eventUrl which is not typically updated but good to be consistent.
       });
     }
 
@@ -312,31 +323,31 @@ async function handleSubmit() {
     }
     
     // 成功したらイベント一覧ページに遷移
-    router.push({ name: 'EventList' });
-
+    router.push('/events');
   } catch (err) {
-    console.error('Failed to save event:', err);
-    errorMessage.value = err.message || (effectiveMode.value === 'create' ? 'イベントの登録に失敗しました。' : 'イベントの更新に失敗しました。'); // props.mode を effectiveMode.value に変更
+    console.error('Submit failed:', err);
+    errorMessage.value = err.message || (effectiveMode.value === 'create' ? '登録に失敗しました。' : '更新に失敗しました。');
   } finally {
     loading.value = false;
   }
 }
 
 function cancel() {
-  router.push({ name: 'EventList' });
+  router.push('/events');
 }
 
+// Load event details if in edit mode
 onMounted(() => {
-  if (effectiveMode.value === 'edit') { // props.mode を effectiveMode.value に変更
+  if (effectiveMode.value === 'edit') {
     fetchEventDetails();
   } else {
-    // 新規作成時はデフォルト値を設定 (例: 今日から7日後など)
-    const today = new Date();
-    const defaultStartDate = new Date(today);
-    const defaultEndDate = new Date(today);
-    defaultEndDate.setDate(today.getDate() + 6);
-    event.startDate = formatDateForInput(defaultStartDate.toISOString());
-    event.endDate = formatDateForInput(defaultEndDate.toISOString());
+    // Create mode: initialize with defaults or leave blank
+    event.eventUrl = '';
+    event.name = '';
+    event.startDate = '';
+    event.endDate = '';
+    event.locationUid = '';
+    event.maxParticipants = null;
   }
 });
 

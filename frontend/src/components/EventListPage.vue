@@ -211,20 +211,20 @@ const sortedEvents = computed(() => {
 });
 
 // frontend/src/components/EventListPage.vue (script setup部分)
-function navigateToSchedule(eventUrl, startDate, endDate, locationUid, eventDisplayName) { 
-  console.log('Navigating to schedule with eventUrl:', eventUrl);
-
-  const urlParts = eventUrl.match(/escape\.id\/org\/([^\/]+)\/event\/([^\/]+)/);
-  if (urlParts && urlParts[1] && urlParts[2]) {
-    const orgSlug = urlParts[1];
-    const eventSlug = urlParts[2];
-    router.push({
-      name: 'SchedulePage',
-      params: { orgSlug: orgSlug, eventSlug: eventSlug } 
-    });
-  } else {
-    console.error('Could not extract orgSlug and eventSlug from URL:', eventUrl);
-    // Handle error
+function navigateToSchedule(eventUrl) {
+  try {
+    const url = new URL(eventUrl);
+    const pathParts = url.pathname.split('/').filter(part => part.length > 0);
+    if (pathParts.length >= 4 && pathParts[0] === 'org' && pathParts[2] === 'event') {
+      const orgSlug = pathParts[1];
+      const eventSlug = pathParts[3];
+      router.push({ name: 'SchedulePage', params: { orgSlug, eventSlug } });
+    } else {
+      console.error('Invalid event URL format for schedule navigation:', eventUrl);
+      // Fallback or error handling if needed
+    }
+  } catch (e) {
+    console.error('Error parsing event URL for schedule navigation:', eventUrl, e);
   }
 }
 
@@ -233,11 +233,37 @@ function navigateToCreateEvent() {
 }
 
 function navigateToEditEvent(eventUrl) {
-  router.push({ name: 'EditEvent', params: { eventUrlProp: encodeURIComponent(eventUrl) } });
+  try {
+    const url = new URL(eventUrl);
+    const pathParts = url.pathname.split('/').filter(part => part.length > 0);
+    // Expected format: /org/{orgSlug}/event/{eventSlug}/
+    if (pathParts.length >= 4 && pathParts[0] === 'org' && pathParts[2] === 'event') {
+      const orgSlug = pathParts[1];
+      const eventSlug = pathParts[3];
+      router.push({ name: 'EditEvent', params: { orgSlugProp: orgSlug, eventSlugProp: eventSlug } });
+    } else {
+      console.error('Cannot edit: Invalid event URL format for extracting slugs:', eventUrl);
+      // Optionally, display an error to the user
+    }
+  } catch (e) {
+    console.error('Error parsing event URL for editing:', eventUrl, e);
+  }
 }
 
 function navigateToSummary(eventUrl) {
-  router.push({ name: 'EventSummaryPage', params: { eventUrlProp: encodeURIComponent(eventUrl) } });
+  try {
+    const url = new URL(eventUrl);
+    const pathParts = url.pathname.split('/').filter(part => part.length > 0);
+    if (pathParts.length >= 4 && pathParts[0] === 'org' && pathParts[2] === 'event') {
+      const orgSlug = pathParts[1];
+      const eventSlug = pathParts[3];
+      router.push({ name: 'EventSummary', params: { orgSlug, eventSlug } });
+    } else {
+      console.error('Invalid event URL format for summary navigation:', eventUrl);
+    }
+  } catch (e) {
+    console.error('Error parsing event URL for summary navigation:', eventUrl, e);
+  }
 }
 
 async function deleteEvent(eventUrl, eventName) {

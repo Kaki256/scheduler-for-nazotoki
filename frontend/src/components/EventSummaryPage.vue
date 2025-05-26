@@ -216,6 +216,11 @@ import { ref, onMounted, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 
+const props = defineProps({
+  orgSlug: { type: String, required: true },
+  eventSlug: { type: String, required: true }
+});
+
 const route = useRoute();
 const router = useRouter();
 
@@ -508,31 +513,27 @@ const groupedTimeSlotsForTable = computed(() => {
     }));
 });
 
-async function fetchSummary() {
-  if (!eventUrl.value) {
-    errorMessage.value = 'イベントURLが指定されていません。';
-    loadingInitialData.value = false;
+async function fetchSummaryData() {
+  if (!props.orgSlug || !props.eventSlug) {
+    errorMessage.value = 'Organization slug or Event slug is missing.';
     return;
   }
   loadingInitialData.value = true;
-  loadingTeamCombinations.value = true; // Start loading combinations as well
   errorMessage.value = '';
-  internalSortedTeamCombinations.value = []; // Reset combinations
-  vacancyStatusMap.value = {}; // Reset vacancy status
+
+  // Reconstruct the event URL from slugs, ensuring it ends with a slash
+  const eventUrl = `https://escape.id/org/${props.orgSlug}/event/${props.eventSlug}/`;
+  console.log('[EventSummaryPage] Reconstructed event URL for fetching summary:', eventUrl);
 
   try {
-    const response = await fetch(`${API_BASE_URL}/events/${encodeURIComponent(eventUrl.value)}/summary`);
-    console.log('Fetching event summary from:', `${API_BASE_URL}/events/${encodeURIComponent(eventUrl.value)}/summary`);
-    console.log('Response status:', response.status);
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ message: '集計データの取得に失敗しました。' }));
-      throw new Error(errorData.error || errorData.message || `サーバーエラー (${response.status})`);
-    }
-    const data = await response.json();
-    eventName.value = data.eventName;
-    eventStartDate.value = data.eventStartDate;
-    eventEndDate.value = data.eventEndDate;
-    maxParticipants.value = data.maxParticipants;
+    const encodedEventUrl = encodeURIComponent(eventUrl);
+    const response = await axios.get(`${API_BASE_URL}/events/${encodedEventUrl}/summary`);
+    const data = response.data;
+
+    eventName.value = data.eventName || '';
+    eventStartDate.value = data.eventStartDate || '';
+    eventEndDate.value = data.eventEndDate || '';
+    maxParticipants.value = data.maxParticipants || null;
     allEventTimeSlotsUTC.value = (data.allEventTimeSlotsUTC || []).sort();
     allUsers.value = data.allUsers || [];
     userSelectionsMap.value = data.userSelectionsMap || {};
@@ -542,8 +543,8 @@ async function fetchSummary() {
     } else {
         // Fallback:別途イベント詳細を取得してlocationUidを得る
         try {
-            console.log(`[SummaryPage] Fetching event details for locationUid for: ${eventUrl.value}`);
-            const eventDetailsResponse = await fetch(`${API_BASE_URL}/events/${encodeURIComponent(eventUrl.value)}`);
+            console.log(`[SummaryPage] Fetching event details for locationUid for: ${eventUrl}`);
+            const eventDetailsResponse = await fetch(`${API_BASE_URL}/events/${encodeURIComponent(eventUrl)}`);
             if (eventDetailsResponse.ok) {
                 const details = await eventDetailsResponse.json();
                 if (details.locationUid) {
@@ -589,15 +590,16 @@ async function fetchSummary() {
 }
 
 async function fetchVacancyData() {
-  if (!eventUrl.value || !eventStartDate.value || !eventEndDate.value || !eventLocationUid.value) {
+  if (!props.orgSlug || !props.eventSlug || !eventStartDate.value || !eventEndDate.value || !eventLocationUid.value) {
     console.warn('Cannot fetch vacancy data, missing params.', 
-      { url: eventUrl.value, start: eventStartDate.value, end: eventEndDate.value, uid: eventLocationUid.value });
+      { orgSlug: props.orgSlug, eventSlug: props.eventSlug, start: eventStartDate.value, end: eventEndDate.value, uid: eventLocationUid.value });
     return;
   }
-  console.log('Fetching vacancy data for:', eventUrl.value, eventStartDate.value, eventEndDate.value, eventLocationUid.value);
+  const reconstructedEventUrl = `https://escape.id/org/${props.orgSlug}/event/${props.eventSlug}/`;
+  console.log('Fetching vacancy data for:', reconstructedEventUrl, eventStartDate.value, eventEndDate.value, eventLocationUid.value);
   try {
     const scheduleResponse = await axios.post(`${API_BASE_URL}/get-schedule`, {
-      event_url: eventUrl.value,
+      event_url: reconstructedEventUrl,
       date_from: eventStartDate.value,
       date_to: eventEndDate.value,
       location_uid: eventLocationUid.value
@@ -1001,7 +1003,7 @@ function resetFixedTeams() {
 }
 
 onMounted(() => {
-  fetchSummary();
+  fetchSummaryData();
 });
 </script>
 

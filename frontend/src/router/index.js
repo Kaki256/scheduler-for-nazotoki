@@ -20,21 +20,25 @@ const routes = [
     props: true
   },
   {
-    path: '/create-event',
-    name: 'CreateEvent',
+    path: '/events/new',
+    name: 'NewEvent',
     component: EventFormPage,
-    props: { mode: 'create' } // 作成モード
+    props: { mode: 'create' }
   },
   {
-    path: '/edit-event/:eventUrlProp(.*)',
+    path: '/events/edit/:orgSlugProp/:eventSlugProp',
     name: 'EditEvent',
     component: EventFormPage,
-    props: true // ルートパラメータをpropsとして渡す
+    props: route => ({ 
+      mode: 'edit', 
+      orgSlugProp: route.params.orgSlugProp, 
+      eventSlugProp: route.params.eventSlugProp 
+    })
   },
   {
-    path: '/event/:eventUrlProp/summary',
-    name: 'EventSummaryPage',
-    component: () => import('../components/EventSummaryPage.vue'), // 遅延読み込み
+    path: '/summary/:orgSlug/:eventSlug',
+    name: 'EventSummary', // EventSummaryPage.vue で使用されている名前に合わせる
+    component: () => import('../components/EventSummaryPage.vue'), 
     props: true
   }
   // ★ END: イベント作成・編集ルート ★
