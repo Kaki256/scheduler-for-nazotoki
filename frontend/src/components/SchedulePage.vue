@@ -168,6 +168,24 @@
           <!-- Content for Weekday Bulk Modal -->
           <div v-if="modalMode === 'weekdayBulk'">
             <div v-if="selectedWeekdayForBulkModal !== null && getRepresentativeSlotsForDay(selectedWeekdayForBulkModal).length > 0" class="weekday-bulk-details-modal">
+              <div class="weekday-overall-bulk-actions modal-bulk-actions">
+                <button 
+                  @click="setOverallBulkStatusForWeekday(selectedWeekdayForBulkModal, 'going')" 
+                  :class="['button', 'bulk-action-button', 'bulk-going', { 'active': weekdayOverallActiveBulkStatus[selectedWeekdayForBulkModal] === 'going' }]">
+                  全部行ける
+                </button>
+                <button 
+                  @click="setOverallBulkStatusForWeekday(selectedWeekdayForBulkModal, 'maybe')" 
+                  :class="['button', 'bulk-action-button', 'bulk-maybe', { 'active': weekdayOverallActiveBulkStatus[selectedWeekdayForBulkModal] === 'maybe' }]">
+                  全部微妙
+                </button>
+                <button 
+                  @click="setOverallBulkStatusForWeekday(selectedWeekdayForBulkModal, 'not_going')" 
+                  :class="['button', 'bulk-action-button', 'bulk-not-going', { 'active': weekdayOverallActiveBulkStatus[selectedWeekdayForBulkModal] === 'not_going' }]">
+                  全部行けない
+                </button>
+              </div>
+
               <ul class="slot-list modal-slot-list">
                 <li v-for="slotTimeHHMM in getRepresentativeSlotsForDay(selectedWeekdayForBulkModal)" :key="slotTimeHHMM" class="slot-item">
                   <div class="slot-info">
@@ -243,8 +261,6 @@ const locationUidRef = ref('');
 
 const formatDateForInput = (date) => date.toISOString().split('T')[0];
 const todayForDefaults = new Date();
-const defaultStartDateValue = formatDateForInput(new Date(todayForDefaults)); // Today
-const defaultEndDateValue = formatDateForInput(new Date(new Date(todayForDefaults).setDate(todayForDefaults.getDate() + 6))); // 7 days from today
 
 const currentStartDate = ref('');
 const currentEndDate = ref('');
@@ -267,6 +283,7 @@ const saveMessage = ref({ text: '', type: '' });
 
 const dateActiveBulkStatus = reactive({}); // { [date]: 'going' | 'maybe' | 'not_going' | null }
 const weekdayActiveBulkStatus = reactive({}); // { [dayIndex]: 'going' | 'maybe' | 'not_going' | null }
+const weekdayOverallActiveBulkStatus = reactive({}); // { [dayIndex]: 'going' | 'maybe' | 'not_going' | null }
 
 // モーダル状態管理の統合
 const isModalOpen = ref(false); // 共通のモーダル表示状態
@@ -488,27 +505,58 @@ function openWeekdayBulkModal(dayIndex) {
       bulkWeekdaySlotSelections[dayIndex][slotTimeHHMM] = undefined;
     });
   }
+  // モーダルを開く際に、その曜日の全体一括ステータスをリセット
+  weekdayOverallActiveBulkStatus[dayIndex] = null;
   isModalOpen.value = true; // 共通モーダルを開く
 }
 
 // toggleBulkSlotStatus は特定の曜日の特定の代表スロットのステータスをトグルします
-function toggleBulkSlotStatus(dayIndex, slotTimeHHMM) {
-  // bulkWeekdaySlotSelections[dayIndex] が存在することを確認、なければ初期化
-  if (!bulkWeekdaySlotSelections[dayIndex]) {
-    bulkWeekdaySlotSelections[dayIndex] = {};
+// (この関数は上で定義済み、内容確認・重複削除)
+
+// ★★★ START: 新しい関数 ★★★
+function setOverallBulkStatusForWeekday(dayIndex, status) {
+  if (dayIndex === null || !bulkWeekdaySlotSelections[dayIndex]) {
+    console.warn('Cannot set overall bulk status: dayIndex is null or no bulk selections initialized for this dayIndex.');
+    return;
   }
-  // slotTimeHHMM が bulkWeekdaySlotSelections[dayIndex] に存在しない場合、初期値(undefined)を設定
-  if (!bulkWeekdaySlotSelections[dayIndex].hasOwnProperty(slotTimeHHMM)) {
-    bulkWeekdaySlotSelections[dayIndex][slotTimeHHMM] = undefined;
+  const representativeSlots = getRepresentativeSlotsForDay(dayIndex);
+  if (!representativeSlots || representativeSlots.length === 0) {
+    console.warn('No representative slots to set overall status for.');
+    return;
   }
 
-  const currentStatus = bulkWeekdaySlotSelections[dayIndex][slotTimeHHMM];
-  const currentIndex = possibleStatuses.indexOf(currentStatus);
-  const nextIndex = (currentIndex + 1) % possibleStatuses.length;
-  const nextStatus = possibleStatuses[nextIndex];
+  let allSlotsUpdated = true;
+  representativeSlots.forEach(slotTimeHHMM => {
+    if (bulkWeekdaySlotSelections[dayIndex].hasOwnProperty(slotTimeHHMM)) {
+      bulkWeekdaySlotSelections[dayIndex][slotTimeHHMM] = status;
+    } else {
+      // This case should ideally not happen if bulkWeekdaySlotSelections is properly initialized
+      // with all representative slots.
+      console.warn(`Slot ${slotTimeHHMM} not found in bulk selections for dayIndex ${dayIndex}. Initializing it.`);
+      bulkWeekdaySlotSelections[dayIndex][slotTimeHHMM] = status; 
+    }
+  });
 
-  bulkWeekdaySlotSelections[dayIndex][slotTimeHHMM] = nextStatus;
+  if(allSlotsUpdated){
+    weekdayOverallActiveBulkStatus[dayIndex] = status;
+  } else {
+    // If somehow not all slots could be updated (e.g. representativeSlots had items not in bulkWeekdaySlotSelections)
+    // then the overall status might be inconsistent, so reset it.
+    weekdayOverallActiveBulkStatus[dayIndex] = null;
+  }
+  
+  saveMessage.value = { text: '', type: '' }; // 保存メッセージをクリア
+  console.log(`Overall bulk status '${status}' set for weekday index '${dayIndex}' in modal. Selections:`, JSON.parse(JSON.stringify(bulkWeekdaySlotSelections[dayIndex])));
 }
+// ★★★ END: 新しい関数 ★★★
+
+// applyBulkWeekdaySelections は特定の曜日のモーダルで設定された各スロットのステータスを、
+// 実際の userSelection に適用します。
+// (この関数は上で定義済み、内容確認・重複削除)
+
+
+// toggleBulkSlotStatus は特定の曜日の特定の代表スロットのステータスをトグルします
+// (この関数は上で定義済み、内容確認・重複削除)
 
 function applyBulkWeekdaySelections(dayIndex) {
   const selectionsForWeekday = bulkWeekdaySlotSelections[dayIndex];
@@ -737,35 +785,6 @@ async function fetchEventDetailsBySlugs(orgSlug, eventSlug) {
   } catch (error) {
     console.error('[EventDetailsFetch] Error fetching event details by reconstructed eventUrl:', error);
     errorMessage.value = `イベント詳細の取得に失敗しました: ${error.message}`;
-  }
-  loading.value = false;
-}
-
-async function fetchEventDetailsBySlug(slug) {
-  loading.value = true;
-  errorMessage.value = '';
-  try {
-    // APIを呼び出してイベント詳細を取得 (eventUrl, locationUid, startDate, endDate, name を含む)
-    // このAPIエンドポイントはバックエンドに実装する必要があります。
-    // 例: GET /api/events/slug/:eventSlug
-    const response = await axios.get(`${API_BASE_URL}/events/slug/${slug}`);
-    const eventDetails = response.data;
-
-    eventUrlRef.value = eventDetails.eventUrl; // APIから取得したeventUrl
-    locationUidRef.value = eventDetails.locationUid;
-    currentStartDate.value = formatDateForInput(new Date(eventDetails.startDate));
-    currentEndDate.value = formatDateForInput(new Date(eventDetails.endDate));
-    eventDisplayNameRef.value = eventDetails.name;
-
-    // データ取得後、スケジュールデータをフェッチ
-    if (eventUrlRef.value && currentStartDate.value && currentEndDate.value && locationUidRef.value) {
-      await fetchScheduleData(eventUrlRef.value, currentStartDate.value, currentEndDate.value, locationUidRef.value);
-    }
-    initialLoadDone.value = true;
-  } catch (error) {
-    console.error('[EventDetailsFetch] Error fetching event details by slug:', error);
-    errorMessage.value = `イベント詳細の取得に失敗しました: ${error.message}`;
-    // 必要に応じて、ユーザーにエラーを通知し、ページを適切に処理する
   }
   loading.value = false;
 }
@@ -1549,6 +1568,7 @@ const getDayStyle = (dayObject) => {
 }
 .modal-apply-button { /* Specific styling for apply button in modal */
   margin-top: 20px; /* Increased margin from the list */
+
   padding: 10px 15px; 
 }
 

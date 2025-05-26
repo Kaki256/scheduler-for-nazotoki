@@ -21,7 +21,7 @@ const routes = [
   },
   {
     path: '/events/new',
-    name: 'NewEvent',
+    name: 'CreateEvent',
     component: EventFormPage,
     props: { mode: 'create' }
   },
