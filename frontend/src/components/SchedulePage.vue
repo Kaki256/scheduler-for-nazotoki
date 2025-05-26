@@ -554,9 +554,32 @@ function setOverallBulkStatusForWeekday(dayIndex, status) {
 // 実際の userSelection に適用します。
 // (この関数は上で定義済み、内容確認・重複削除)
 
+// toggleBulkSlotStatus 関数の定義
+function toggleBulkSlotStatus(dayIndex, slotTimeHHMM) {
+  if (!bulkWeekdaySlotSelections[dayIndex]) {
+    bulkWeekdaySlotSelections[dayIndex] = {};
+  }
 
-// toggleBulkSlotStatus は特定の曜日の特定の代表スロットのステータスをトグルします
-// (この関数は上で定義済み、内容確認・重複削除)
+  const currentStatus = bulkWeekdaySlotSelections[dayIndex][slotTimeHHMM];
+  const currentIndex = possibleStatuses.indexOf(currentStatus);
+  const nextIndex = (currentIndex + 1) % possibleStatuses.length;
+  const nextStatus = possibleStatuses[nextIndex];
+
+  if (nextStatus === undefined) {
+    bulkWeekdaySlotSelections[dayIndex][slotTimeHHMM] = undefined;
+  } else {
+    bulkWeekdaySlotSelections[dayIndex][slotTimeHHMM] = nextStatus;
+  }
+
+  // 曜日全体のバルクステータスが設定されていた場合、個別の変更によりリセット
+  if (weekdayOverallActiveBulkStatus[dayIndex] !== undefined && weekdayOverallActiveBulkStatus[dayIndex] !== null) {
+      weekdayOverallActiveBulkStatus[dayIndex] = null;
+  }
+
+  saveMessage.value = { text: '', type: '' }; // 保存メッセージをクリア (必要に応じて)
+  // console.log(`Toggled bulk slot status for weekday ${dayIndex}, time ${slotTimeHHMM} to: ${nextStatus}. Selections:`, JSON.parse(JSON.stringify(bulkWeekdaySlotSelections[dayIndex])));
+}
+
 
 function applyBulkWeekdaySelections(dayIndex) {
   const selectionsForWeekday = bulkWeekdaySlotSelections[dayIndex];
