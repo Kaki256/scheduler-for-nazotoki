@@ -149,6 +149,7 @@
                   </span>
                 </div>
                 <div
+                  v-if="!isSlotSoldOut(slot.originalStartTimeUTC)" 
                   class="user-status-selector clickable"
                   :class="getUserSlotClass(userSelection[slot.originalStartTimeUTC])"
                   @click="toggleSlotStatus(slot.originalStartTimeUTC)"
@@ -159,6 +160,14 @@
                   :aria-label="`スロット ${new Date(slot.originalStartTimeUTC).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })} のあなたのステータス: ${formatUserSelectionStatus(userSelection[slot.originalStartTimeUTC])}。クリックまたはEnter/Spaceで変更`"
                 >
                   {{ formatUserSelectionStatus(userSelection[slot.originalStartTimeUTC]) }}
+                </div>
+                <div
+                  v-else
+                  class="user-status-selector disabled-slot"
+                  :aria-label="`スロット ${new Date(slot.originalStartTimeUTC).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })} は満席です。あなたのステータス: ${formatUserSelectionStatus(userSelection[slot.originalStartTimeUTC])}`"
+                  aria-disabled="true"
+                >
+                  {{ formatUserSelectionStatus(userSelection[slot.originalStartTimeUTC]) }} 
                 </div>
               </li>
             </ul>
@@ -380,20 +389,18 @@ function formatDate(dateString) {
 
 function formatSlotStatus(status) {
   const statusMap = {
-    'available': '予約可', 'sold_out': '完売', 'few_tickets_left': '残りわずか',
-    'on_sale_soon': '販売開始前', 'sales_ended': '販売終了', 'unknown': '不明'
+    'MANY': '残数あり', 'FULL': '完売', 'FEW': '残りわずか',
+    'NOT_IN_SALES_PERIOD': '販売開始前'
   };
   return statusMap[status] || status;
 }
 
 function getSlotStatusClass(status) {
   switch (status) {
-    case 'available': return 'status-available';
-    case 'few_tickets_left': return 'status-few-tickets-left';
-    case 'sold_out': return 'status-sold-out';
-    case 'sales_ended': return 'status-sales-ended';
-    case 'on_sale_soon': return 'status-on-sale-soon';
-    default: return 'status-unknown';
+    case 'MANY': return 'status-available';
+    case 'FEW': return 'status-few-tickets-left';
+    case 'FULL': return 'status-sold-out';
+    case 'NOT_IN_SALES_PERIOD': return 'status-on-sale-soon';
   }
 }
 
@@ -426,6 +433,16 @@ function formatUserSelectionStatus(status) {
 
 // 新しい関数: スロットのステータスをトグルする
 function toggleSlotStatus(slotUtcTime) {
+  // Check if the slot is sold out
+  if (isSlotSoldOut(slotUtcTime)) {
+    // If sold out, set status to 'undefined' (unselected)
+    userSelection[slotUtcTime] = 'not_going'; 
+    // Optionally, provide feedback to the user that this slot is full
+    // console.log(`Slot ${slotUtcTime} is full and has been set to 'unselected'.`);
+    // saveMessage.value = { text: 'この時間は満席のため「未選択」に設定されました。', type: 'info' };
+    return; // Exit the function
+  }
+
   const currentStatus = userSelection[slotUtcTime];
   const currentIndex = possibleStatuses.indexOf(currentStatus);
   const nextIndex = (currentIndex + 1) % possibleStatuses.length;
@@ -462,7 +479,11 @@ function setBulkStatusForDate(date, status) {
   if (schedule.value[date] && Array.isArray(schedule.value[date])) {
     schedule.value[date].forEach(slot => {
       if (slot && slot.originalStartTimeUTC) {
-        userSelection[slot.originalStartTimeUTC] = status;
+        if (isSlotSoldOut(slot.originalStartTimeUTC)) {
+          userSelection[slot.originalStartTimeUTC] = 'not_going';
+        } else {
+          userSelection[slot.originalStartTimeUTC] = status;
+        }
       }
     });
     dateActiveBulkStatus[date] = status;
@@ -608,15 +629,20 @@ function applyBulkWeekdaySelections(dayIndex) {
               const newStatus = selectionsForWeekday[slotTimeHHMM];
               const currentActualStatus = userSelection[slot.originalStartTimeUTC];
 
-              if (newStatus === undefined) { // 未選択に設定する場合
-                if (currentActualStatus !== undefined) { // 既に何か選択されていれば削除
-                  delete userSelection[slot.originalStartTimeUTC];
-                  changesMade = true;
-                }
-              } else { // 'going', 'maybe', 'not_going' に設定する場合
-                if (currentActualStatus !== newStatus) { // 状態が異なる場合のみ更新
-                  userSelection[slot.originalStartTimeUTC] = newStatus;
-                  changesMade = true;
+              if (isSlotSoldOut(slot.originalStartTimeUTC)) {
+                userSelection[slot.originalStartTimeUTC] = 'not_going';
+                changesMade = true;
+              } else {
+                if (newStatus === undefined) { // 未選択に設定する場合
+                  if (currentActualStatus !== undefined) { // 既に何か選択されていれば削除
+                    userSelection[slot.originalStartTimeUTC] = 'not_going';
+                    changesMade = true;
+                  }
+                } else { // 'going', 'maybe', 'not_going' に設定する場合
+                  if (currentActualStatus !== newStatus) { // 状態が異なる場合のみ更新
+                    userSelection[slot.originalStartTimeUTC] = newStatus;
+                    changesMade = true;
+                  }
                 }
               }
               // この日付の dateActiveBulkStatus をリセット (変更があった場合のみでも良いが、簡潔さのため常に)
@@ -882,9 +908,14 @@ async function loadUserStatus(user, url) {
     if (response.data && Array.isArray(response.data)) {
       Object.keys(userSelection).forEach(key => delete userSelection[key]);
       response.data.forEach(item => {
-        userSelection[item.event_datetime_utc] = item.status;
+        if (isSlotSoldOut(item.event_datetime_utc)) {
+          // For sold-out slots, ensure they are treated as 'unselected' (undefined)
+          // regardless of what was saved. So, we simply don't set userSelection for this item.
+        } else {
+          userSelection[item.event_datetime_utc] = item.status;
+        }
       });
-      console.log('[StatusLoad] User status loaded and applied:', JSON.parse(JSON.stringify(userSelection)));
+      console.log('[StatusLoad] User status loaded and applied (sold-out slots are unselected):', JSON.parse(JSON.stringify(userSelection)));
       Object.keys(dateActiveBulkStatus).forEach(key => dateActiveBulkStatus[key] = null);
       Object.keys(weekdayActiveBulkStatus).forEach(key => weekdayActiveBulkStatus[key] = null);
     } else if (response.data && Object.keys(response.data).length === 0) {
@@ -1139,6 +1170,33 @@ const getDayStyle = (dayObject) => {
     background: `linear-gradient(to bottom, ${colorStops.join(', ')})`,
   };
 };
+
+// Helper function to get slot details by its UTC time string
+function getSlotByUtcTime(utcTime) {
+  if (!schedule.value || Object.keys(schedule.value).length === 0) {
+    return null;
+  }
+  for (const dateKey in schedule.value) {
+    const slotsOnDate = schedule.value[dateKey];
+    if (Array.isArray(slotsOnDate)) {
+      // schedule.value[dateKey] stores slots with { time, status, originalStartTimeUTC }
+      // where status is directly from slot.vacancyType (e.g., 'FULL', 'MANY')
+      const foundSlot = slotsOnDate.find(s => s.originalStartTimeUTC === utcTime);
+      if (foundSlot) {
+        return foundSlot; 
+      }
+    }
+  }
+  return null;
+}
+
+// Helper function to check if a slot is sold out
+function isSlotSoldOut(slotUtcTime) {
+  const slot = getSlotByUtcTime(slotUtcTime);
+  // Assuming slot.status directly holds the value like 'FULL', 'MANY', etc.
+  // from the backend's vacancyType.
+  return slot && slot.status === 'FULL'; 
+}
 
 </script>
 
@@ -1504,6 +1562,7 @@ const getDayStyle = (dayObject) => {
   margin-bottom: 15px;
   padding: 10px;
   background-color: #f0f4f8;
+ 
   border-radius: 6px;
 }
 .bulk-actions-title, .weekday-label {
@@ -1804,5 +1863,11 @@ const getDayStyle = (dayObject) => {
 
 .calendar-day-cell.no-slots-in-range-diagonal {
   background-image: linear-gradient(to right bottom, transparent 49.5%, rgb(219, 219, 219) 49.5%, rgb(219, 219, 219) 50.5%, transparent 50.5%);
+}
+
+.disabled-slot {
+  background-color: #e0e0e0; /* 例: グレーアウト */
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 </style>
