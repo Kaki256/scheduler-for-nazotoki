@@ -9,16 +9,31 @@
       <form @submit.prevent="handleSubmit">
         <div class="form-group">
           <label for="eventUrl" class="form-label">イベントURL:</label>
-          <input
-            type="url"
-            id="eventUrl"
-            v-model="event.eventUrl"
-            placeholder="例: https://escape.id/org/tumbleweed/event/yawfwel/"
-            class="form-input"
-            :disabled="mode === 'edit'"
-            required
-            @blur="fetchLocationUid"
-          />
+          <div class="flex items-center">
+            <input
+              type="url"
+              id="eventUrl"
+              v-model="event.eventUrl"
+              placeholder="例: https://escape.id/org/tumbleweed/event/yawfwel/"
+              class="form-input flex-grow"
+              :disabled="mode === 'edit'"
+              required
+            />
+            <button
+              type="button"
+              @click="fetchEventDataFromUrl"
+              v-if="event.eventUrl && effectiveMode === 'create'"
+              class="button-fetch-data ml-2"
+              :disabled="loading"
+            >
+              <svg v-if="loading && fetchOperationLoading" class="loading-spinner-button" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <span v-if="loading && fetchOperationLoading">取得中...</span>
+              <span v-if="!(loading && fetchOperationLoading)">情報を取得</span>
+            </button>
+          </div>
           <p v-if="mode === 'edit'" class="form-help-text">イベントURLは編集できません。</p>
         </div>
 
@@ -118,6 +133,7 @@ const event = reactive({
 
 const loading = ref(false);
 const errorMessage = ref('');
+const fetchOperationLoading = ref(false); // ローディング状態を分ける
 
 const effectiveMode = computed(() => {
   if (props.mode) {
@@ -130,7 +146,7 @@ const effectiveMode = computed(() => {
 const pageTitle = computed(() => effectiveMode.value === 'create' ? '新しいイベントを登録' : 'イベント情報を編集');
 const pageSubtitle = computed(() => effectiveMode.value === 'create' ? 'イベントの情報を入力してください。' : 'イベントの情報を更新してください。');
 const submitButtonText = computed(() => {
-  if (loading.value) {
+  if (loading.value && !fetchOperationLoading.value) { // fetchOperationLoadingでない場合のみ
     return effectiveMode.value === 'create' ? '登録中...' : '更新中...';
   }
   return effectiveMode.value === 'create' ? '登録する' : '更新する';
@@ -146,17 +162,21 @@ const formatDateForInput = (dateString) => {
   }
 };
 
-async function fetchLocationUid() {
+async function fetchEventDataFromUrl() { // Renamed from fetchLocationUid and extended
   if (!event.eventUrl || effectiveMode.value === 'edit') {
     return;
   }
   loading.value = true;
+  fetchOperationLoading.value = true;
   errorMessage.value = '';
+  // Initialize fields that will be fetched from URL
+  event.name = '';
+  event.startDate = '';
+  event.endDate = '';
   event.locationUid = '';
-  event.maxParticipants = null; // 初期化
+  event.maxParticipants = null;
 
   try {
-    // バックエンドの /api/fetch-html エンドポイントを呼び出す
     const backendResponse = await fetch(`${API_BASE_URL}/fetch-html`, {
       method: 'POST',
       headers: {
@@ -186,58 +206,128 @@ async function fetchLocationUid() {
     }
 
     const propsData = JSON.parse(propsString);
-    
-    let locationUid = null;
-    let maxParticipants = null; // maxParticipants を宣言
+    const infoDetails = propsData?.info?.[1];
 
-    // propsDataの構造を元にlocation.uidとmaxParticipantsを探す
-    if (propsData && propsData.info && Array.isArray(propsData.info) && propsData.info.length > 1) {
-      const infoDetails = propsData.info[1]; 
-      if (infoDetails.activeSlotGroups && Array.isArray(infoDetails.activeSlotGroups) && infoDetails.activeSlotGroups.length > 1) {
-        const firstSlotGroupArray = infoDetails.activeSlotGroups[1];
-        if (Array.isArray(firstSlotGroupArray) && firstSlotGroupArray.length > 0) {
-          const firstSlotGroup = firstSlotGroupArray[0]; 
-          if (firstSlotGroup && Array.isArray(firstSlotGroup) && firstSlotGroup.length > 1 && firstSlotGroup[1].location && Array.isArray(firstSlotGroup[1].location) && firstSlotGroup[1].location.length > 1 && firstSlotGroup[1].location[1].uid && Array.isArray(firstSlotGroup[1].location[1].uid) && firstSlotGroup[1].location[1].uid.length > 1) {
-            locationUid = firstSlotGroup[1].location[1].uid[1];
-          }
-        }
-      }
-      
-      if (!locationUid && infoDetails.visibleLocations && Array.isArray(infoDetails.visibleLocations) && infoDetails.visibleLocations.length > 1) {
-        const firstVisibleLocationArray = infoDetails.visibleLocations[1];
-        if (Array.isArray(firstVisibleLocationArray) && firstVisibleLocationArray.length > 0) {
-          const firstVisibleLocationData = firstVisibleLocationArray[0]; 
-          if (firstVisibleLocationData && Array.isArray(firstVisibleLocationData) && firstVisibleLocationData.length > 1 && firstVisibleLocationData[1].uid && Array.isArray(firstVisibleLocationData[1].uid) && firstVisibleLocationData[1].uid.length > 1) {
-            locationUid = firstVisibleLocationData[1].uid[1];
-          }
-        }
-      }
-
-      // maxParticipants を infoDetails 直下から取得
-      if (infoDetails.maxParticipants && Array.isArray(infoDetails.maxParticipants) && infoDetails.maxParticipants.length > 1) {
-        maxParticipants = infoDetails.maxParticipants[1];
-      }
+    if (!infoDetails) {
+      throw new Error('イベント情報の主要な構造(info[1])が見つかりませんでした。');
     }
 
-    if (locationUid) {
-      event.locationUid = locationUid;
-      console.log('取得したLocation UID:', locationUid);
-      if (maxParticipants !== null) {
-        event.maxParticipants = maxParticipants;
-        console.log('取得したMax Participants:', maxParticipants);
-      } else {
-        console.warn('Max Participants は取得できませんでしたが、Location UID は取得できました。');
-        // maxParticipants が必須でない場合はこのままでも良い
-      }
+    // Event Name
+    if (infoDetails.eventName?.[1]) {
+      event.name = infoDetails.eventName[1];
+      console.log('取得したイベント名:', event.name);
     } else {
-      throw new Error('Location UIDの抽出に失敗しました。データ構造を確認してください。');
+      console.warn('イベント名は取得できませんでした。');
     }
+
+    // Start Date and End Date
+    let earliestFirstStartTime = null;
+    let latestLastEndTime = null;
+
+    const processDateValue = (dateValue, isStartTime) => {
+      if (!dateValue || typeof dateValue !== 'string') return;
+      try {
+        const currentDate = new Date(dateValue);
+        if (isNaN(currentDate.getTime())) return; // Invalid date
+
+        if (isStartTime) {
+          if (!earliestFirstStartTime || currentDate < earliestFirstStartTime) {
+            earliestFirstStartTime = currentDate;
+          }
+        } else { // isEndTime
+          if (!latestLastEndTime || currentDate > latestLastEndTime) {
+            latestLastEndTime = currentDate;
+          }
+        }
+      } catch (e) {
+        console.warn('日付文字列の処理中にエラー:', dateValue, e);
+      }
+    };
+
+    const scheduleDataSources = [];
+    // activeSlotGroups からスケジュール情報を収集
+    if (infoDetails.activeSlotGroups && Array.isArray(infoDetails.activeSlotGroups[1])) {
+      infoDetails.activeSlotGroups[1].forEach(groupEntry => {
+        if (groupEntry && Array.isArray(groupEntry) && groupEntry.length > 1 && groupEntry[1]) {
+          scheduleDataSources.push(groupEntry[1]);
+        }
+      });
+    }
+    // visibleLocations からスケジュール情報を収集
+    if (infoDetails.visibleLocations && Array.isArray(infoDetails.visibleLocations[1])) {
+      infoDetails.visibleLocations[1].forEach(locationEntry => {
+        if (locationEntry && Array.isArray(locationEntry) && locationEntry.length > 1 && locationEntry[1]) {
+          // activeSlotGroupsで既に同じ場所の情報が処理されている可能性を考慮
+          // ここでは単純に追加し、min/maxロジックで重複を処理する
+          scheduleDataSources.push(locationEntry[1]);
+        }
+      });
+    }
+
+    scheduleDataSources.forEach(source => {
+      if (source.firstStartTime && Array.isArray(source.firstStartTime) && source.firstStartTime.length > 1) {
+        processDateValue(source.firstStartTime[1], true);
+      }
+      if (source.lastEndTime && Array.isArray(source.lastEndTime) && source.lastEndTime.length > 1) {
+        processDateValue(source.lastEndTime[1], false);
+      }
+    });
+
+    if (earliestFirstStartTime) {
+      event.startDate = formatDateForInput(earliestFirstStartTime.toISOString());
+      console.log('設定された最も早い開始日:', event.startDate, earliestFirstStartTime);
+    } else {
+      console.warn('有効な開始日は見つかりませんでした。');
+    }
+
+    if (latestLastEndTime) {
+      event.endDate = formatDateForInput(latestLastEndTime.toISOString());
+      console.log('設定された最も遅い終了日:', event.endDate, latestLastEndTime);
+    } else {
+      console.warn('有効な終了日は見つかりませんでした。');
+    }
+    
+    // Location UID
+    let extractedLocationUid = null;
+    // Attempt to get UID from activeSlotGroups first
+    if (infoDetails.activeSlotGroups?.[1]?.[0]?.[1]?.location?.[1]?.uid?.[1]) {
+        extractedLocationUid = infoDetails.activeSlotGroups[1][0][1].location[1].uid[1];
+    } 
+    // If not found in activeSlotGroups, try visibleLocations second
+    else if (infoDetails.visibleLocations?.[1]?.[0]?.[1]?.uid?.[1]) {
+        // The structure for visibleLocations seems to be infoDetails.visibleLocations[1][0][1] as the location object itself
+        extractedLocationUid = infoDetails.visibleLocations[1][0][1].uid[1];
+    }
+    
+    if (extractedLocationUid) {
+        event.locationUid = extractedLocationUid;
+        console.log('取得したLocation UID:', event.locationUid);
+    } else {
+        console.warn('Location UIDの抽出に失敗しました。');
+    }
+
+    // Max Participants
+    if (infoDetails.maxParticipants?.[1] !== undefined) {
+      event.maxParticipants = infoDetails.maxParticipants[1];
+      console.log('取得したMax Participants:', event.maxParticipants);
+    } else {
+      console.warn('Max Participants は取得できませんでした。');
+    }
+
+    if (!event.name && !event.startDate && !event.endDate && !event.locationUid) {
+        errorMessage.value = '主要なイベント情報（名前、開始/終了日、場所ID）の取得に失敗しました。URLを確認するか、手動で入力してください。';
+    } else if (!event.locationUid) {
+        // locationUid は登録に必須の可能性があるので、取得できなかった場合は警告を出す
+        errorMessage.value = 'Location UIDが取得できませんでした。イベントURLが正しいか、またはページの構造を確認してください。手動での入力が必要な場合があります。';
+    }
+
 
   } catch (err) {
-    console.error('Location UIDの取得に失敗しました:', err);
-    errorMessage.value = `Location UIDの取得エラー: ${err.message}`;
+    console.error('イベントデータの取得に失敗しました:', err);
+    errorMessage.value = `情報取得エラー: ${err.message}`;
   } finally {
     loading.value = false;
+    fetchOperationLoading.value = false;
   }
 }
 
@@ -279,6 +369,7 @@ async function fetchEventDetails() {
 
 async function handleSubmit() {
   loading.value = true;
+  fetchOperationLoading.value = false; // submit時は fetchOperationLoading は false
   errorMessage.value = '';
 
   if (new Date(event.startDate) > new Date(event.endDate)) {
@@ -538,4 +629,36 @@ onMounted(() => {
 
 /* 既存の scoped style */
 /* 必要に応じてスタイルを追加 */
+
+/* Add styles for the fetch button */
+.button-fetch-data {
+  /* Tailwind: px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:opacity-50 flex items-center justify-center text-sm */
+  padding-left: 0.75rem; /* px-3 */
+  padding-right: 0.75rem; /* px-3 */
+  padding-top: 0.5rem; /* py-2 */
+  padding-bottom: 0.5rem; /* py-2 */
+  background-color: #3b82f6; /* bg-blue-500 */
+  color: white;
+  border-radius: 0.375rem; /* rounded */
+  font-size: 0.875rem; /* text-sm */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap; /* prevent text wrapping */
+}
+.button-fetch-data:hover {
+  background-color: #2563eb; /* bg-blue-600 */
+}
+.button-fetch-data:disabled {
+  opacity: 0.5;
+}
+.button-fetch-data .loading-spinner-button {
+  width: 1em; /* Adjust spinner size to be relative to button font size */
+  height: 1em;
+  margin-right: 0.5em; /* Space between spinner and text */
+}
+
+.form-input.flex-grow {
+  min-width: 0; /* Allows input to shrink properly in flex container */
+}
 </style>
