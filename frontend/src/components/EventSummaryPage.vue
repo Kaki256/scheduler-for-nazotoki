@@ -27,6 +27,13 @@
 
     <div v-if="!loadingInitialData && !errorMessage && groupedTimeSlotsForTable.length > 0" class="summary-table-container mb-6"> <!-- margin-bottom reduced -->
       <h2 class="text-xl font-semibold text-gray-800 mb-2">出欠詳細</h2> <!-- margin-bottom reduced -->
+
+      <!-- <div class="my-3 flex justify-start">
+        <button @click="toggleShowFullDatesInSummary" class="button-secondary">
+          {{ showFullDatesInSummary ? '完売日程を隠す' : '完売日程も表示する' }}
+        </button>
+      </div> -->
+
       <table class="summary-table">
         <thead>
           <tr>
@@ -242,6 +249,9 @@ const internalSortedTeamCombinations = ref([]);
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
 
+// State for showing/hiding full dates in summary table
+const showFullDatesInSummary = ref(false);
+
 // User Ranks (Internal)
 const userRanks = {
   "Pina641": 1,
@@ -266,6 +276,11 @@ function getUserRankScore(username) {
 // Pagination state
 const currentPage = ref(1);
 const itemsPerPage = ref(10);
+
+// Toggle function for showing/hiding full dates in summary table
+function toggleShowFullDatesInSummary() {
+  showFullDatesInSummary.value = !showFullDatesInSummary.value;
+}
 
 // Fixed teams state
 const fixedTeams = ref([]);
@@ -477,15 +492,13 @@ const eventUrl = computed(() => {
 });
 
 const groupedTimeSlotsForTable = computed(() => {
-  if (!allEventTimeSlotsUTC.value || allEventTimeSlotsUTC.value.length === 0) {
-    return [];
-  }
+  const groups = {};
+  const slotsToProcess = showFullDatesInSummary.value
+    ? allEventTimeSlotsUTC.value
+    : allEventTimeSlotsUTC.value.filter(utc => vacancyStatusMap.value[utc] !== 'FULL');
 
-  const groups = new Map(); // Key: 'YYYY-MM-DD' (JST), Value: { dateLabel: 'M月D日 (曜)', slots: [] }
-
-  // JSTに変換して日付ごとにグループ化
-  allEventTimeSlotsUTC.value.forEach(utcSlot => {
-    const dateObj = new Date(utcSlot);
+  slotsToProcess.forEach(utc => {
+    const dateObj = new Date(utc);
     
     // JSTでの日付文字列をキーとする (例: 2025-07-15)
     const jstDateKey = dateObj.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Tokyo' }).replace(/\//g, '-');
@@ -494,17 +507,17 @@ const groupedTimeSlotsForTable = computed(() => {
     // 表示用の時間ラベル (例: 09:00)
     const timeLabel = dateObj.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
 
-    if (!groups.has(jstDateKey)) {
-      groups.set(jstDateKey, { dateLabel: dateLabel, slots: [] });
+    if (!groups[jstDateKey]) {
+      groups[jstDateKey] = { dateLabel: dateLabel, slots: [] };
     }
-    groups.get(jstDateKey).slots.push({
+    groups[jstDateKey].slots.push({
       timeLabel: timeLabel,
-      fullUtc: utcSlot
+      fullUtc: utc
     });
   });
 
   // Mapを日付順にソートして配列に変換
-  return Array.from(groups.entries())
+  return Object.entries(groups)
     .sort(([dateKeyA], [dateKeyB]) => new Date(dateKeyA) - new Date(dateKeyB))
     .map(([dateKey, value]) => ({
       dateKey: dateKey,
