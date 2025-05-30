@@ -39,6 +39,23 @@
             @change="onUsernameChange"
           />
         </div>
+        <div v-if="locationAddressRef">
+          <label for="locationAddressDisplay" class="input-label">開催場所:</label>
+          <a 
+            :href="googleMapsUrl" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            id="locationAddressDisplay"
+            class="input-field display-only-input location-link"
+            @click.prevent="openGoogleMaps"
+            @keydown.enter.prevent="openGoogleMaps"
+            role="link"
+            tabindex="0"
+            :aria-label="`Google Mapsで「${locationAddressRef}」を開く`"
+          >
+            {{ locationAddressRef }}
+          </a>
+        </div>
       </div>
       <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
     </div>
@@ -268,6 +285,7 @@ const eventDisplayNameRef = ref('');
 const eventUrlRef = ref('');
 const locationUidRef = ref('');
 const estimatedTimeRef = ref(''); // 追加
+const locationAddressRef = ref(''); // 開催地住所を格納
 
 const formatDateForInput = (date) => date.toISOString().split('T')[0];
 const todayForDefaults = new Date();
@@ -746,6 +764,17 @@ async function fetchUsername() {
   }
 }
 
+const googleMapsUrl = computed(() => {
+  if (!locationAddressRef.value) return '#';
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(locationAddressRef.value)}`;
+});
+
+function openGoogleMaps() {
+  if (locationAddressRef.value) {
+    window.open(googleMapsUrl.value, '_blank', 'noopener,noreferrer');
+  }
+}
+
 async function fetchScheduleData(eventUrl, dateFrom, dateTo, locationUid) {
   if (!eventUrl || !dateFrom || !dateTo || !locationUid) {
     console.warn('[ScheduleFetch] Missing parameters for fetchScheduleData. Required: eventUrl, dateFrom, dateTo, locationUid. Received:', { eventUrl, dateFrom, dateTo, locationUid });
@@ -882,7 +911,10 @@ async function fetchEventDetailsBySlugs(orgSlug, eventSlug) {
     currentStartDate.value = formatDateForInput(new Date(eventDetails.startDate));
     currentEndDate.value = formatDateForInput(new Date(eventDetails.endDate));
     eventDisplayNameRef.value = eventDetails.name;
-    estimatedTimeRef.value = eventDetails.estimated_time; // 追加
+    eventUrlRef.value = eventDetails.event_url; // イベントURLを更新
+    locationUidRef.value = eventDetails.location_uid; // location_uid を保存
+    estimatedTimeRef.value = eventDetails.estimated_time; // 所要時間を保存
+    locationAddressRef.value = eventDetails.location_address; // ★ 開催地住所を保存
 
     // データ取得後、スケジュールデータをフェッチ
     if (eventUrlRef.value && currentStartDate.value && currentEndDate.value && locationUidRef.value) {
@@ -1469,7 +1501,7 @@ function isSlotSoldOut(slotUtcTime) {
 .date-header {
   min-width: auto; /* 最小幅を解除 */
   width: 100%;    /* 幅を100%にする */
-  padding: 5px; /* 10px から変更 */
+  padding:  5px; /* 10px から変更 */
   font-weight: bold;
   text-align: left; 
   padding-bottom: 3px; /* 5px から変更 */
