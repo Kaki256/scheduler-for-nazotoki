@@ -34,10 +34,27 @@
             type="text"
             id="usernameInput"
             v-model="username"
-            placeholder="TRAQ ID"
+            placeholder="traQ ID"
             class="input-field"
             @change="onUsernameChange"
           />
+        </div>
+        <div v-if="locationAddressRef">
+          <label for="locationAddressDisplay" class="input-label">開催場所:</label>
+          <a 
+            :href="googleMapsUrl" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            id="locationAddressDisplay"
+            class="input-field display-only-input location-link"
+            @click.prevent="openGoogleMaps"
+            @keydown.enter.prevent="openGoogleMaps"
+            role="link"
+            tabindex="0"
+            :aria-label="`Google Mapsで「${locationAddressRef}」を開く`"
+          >
+            {{ locationAddressRef }}
+          </a>
         </div>
       </div>
       <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
@@ -143,7 +160,7 @@
             <ul v-if="slotsForModal.length > 0" class="slot-list modal-slot-list">
               <li v-for="slot in slotsForModal" :key="slot.originalStartTimeUTC" class="slot-item">
                 <div class="slot-info">
-                  <span class="slot-time">{{ new Date(slot.originalStartTimeUTC).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' }) }}</span>
+                  <span class="slot-time">{{ formatSlotTimeRange(slot.originalStartTimeUTC, parsedEstimatedTimeMinutes) }}</span>
                   <span v-if="slot.status" :class="['slot-availability', getSlotStatusClass(slot.status)]">
                     {{ formatSlotStatus(slot.status) }}
                   </span>
@@ -157,14 +174,14 @@
                   tabindex="0"
                   @keydown.enter="toggleSlotStatus(slot.originalStartTimeUTC)"
                   @keydown.space.prevent="toggleSlotStatus(slot.originalStartTimeUTC)"
-                  :aria-label="`スロット ${new Date(slot.originalStartTimeUTC).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })} のあなたのステータス: ${formatUserSelectionStatus(userSelection[slot.originalStartTimeUTC])}。クリックまたはEnter/Spaceで変更`"
+                  :aria-label="`スロット ${formatSlotTimeRange(slot.originalStartTimeUTC, parsedEstimatedTimeMinutes)} のあなたのステータス: ${formatUserSelectionStatus(userSelection[slot.originalStartTimeUTC])}。クリックまたはEnter/Spaceで変更`"
                 >
                   {{ formatUserSelectionStatus(userSelection[slot.originalStartTimeUTC]) }}
                 </div>
                 <div
                   v-else
                   class="user-status-selector disabled-slot"
-                  :aria-label="`スロット ${new Date(slot.originalStartTimeUTC).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })} は満席です。あなたのステータス: ${formatUserSelectionStatus(userSelection[slot.originalStartTimeUTC])}`"
+                  :aria-label="`スロット ${formatSlotTimeRange(slot.originalStartTimeUTC, parsedEstimatedTimeMinutes)} は満席です。あなたのステータス: ${formatUserSelectionStatus(userSelection[slot.originalStartTimeUTC])}`"
                   aria-disabled="true"
                 >
                   {{ formatUserSelectionStatus(userSelection[slot.originalStartTimeUTC]) }} 
@@ -196,22 +213,22 @@
               </div>
 
               <ul class="slot-list modal-slot-list">
-                <li v-for="slotTimeHHMM in getRepresentativeSlotsForDay(selectedWeekdayForBulkModal)" :key="slotTimeHHMM" class="slot-item">
+                <li v-for="slotRep in getRepresentativeSlotsForDay(selectedWeekdayForBulkModal)" :key="slotRep.originalStartTimeUTC" class="slot-item">
                   <div class="slot-info">
-                    <span class="slot-time">{{ slotTimeHHMM }}</span>
+                    <span class="slot-time">{{ formatSlotTimeRange(slotRep.originalStartTimeUTC, parsedEstimatedTimeMinutes) }}</span>
                     <!-- 曜日一括設定では元々のスロットの空き状況 (slot.status) は表示しない -->
                   </div>
                   <div
                     class="user-status-selector clickable"
-                    :class="getUserSlotClass(bulkWeekdaySlotSelections[selectedWeekdayForBulkModal]?.[slotTimeHHMM])"
-                    @click="toggleBulkSlotStatus(selectedWeekdayForBulkModal, slotTimeHHMM)"
+                    :class="getUserSlotClass(bulkWeekdaySlotSelections[selectedWeekdayForBulkModal]?.[slotRep.timeHHMM])"
+                    @click="toggleBulkSlotStatus(selectedWeekdayForBulkModal, slotRep.timeHHMM)"
                     role="button" 
                     tabindex="0"
-                    @keydown.enter="toggleBulkSlotStatus(selectedWeekdayForBulkModal, slotTimeHHMM)"
-                    @keydown.space.prevent="toggleBulkSlotStatus(selectedWeekdayForBulkModal, slotTimeHHMM)"
-                    :aria-label="`曜日 ${weekdayLabels[selectedWeekdayForBulkModal]}, 時刻 ${slotTimeHHMM} の一括設定ステータス: ${formatUserSelectionStatus(bulkWeekdaySlotSelections[selectedWeekdayForBulkModal]?.[slotTimeHHMM])}。クリックまたはEnter/Spaceで変更`"
+                    @keydown.enter="toggleBulkSlotStatus(selectedWeekdayForBulkModal, slotRep.timeHHMM)"
+                    @keydown.space.prevent="toggleBulkSlotStatus(selectedWeekdayForBulkModal, slotRep.timeHHMM)"
+                    :aria-label="`曜日 ${weekdayLabels[selectedWeekdayForBulkModal]}, 時刻 ${slotRep.timeHHMM} (${formatSlotTimeRange(slotRep.originalStartTimeUTC, parsedEstimatedTimeMinutes)}) の一括設定ステータス: ${formatUserSelectionStatus(bulkWeekdaySlotSelections[selectedWeekdayForBulkModal]?.[slotRep.timeHHMM])}。クリックまたはEnter/Spaceで変更`"
                   >
-                    {{ formatUserSelectionStatus(bulkWeekdaySlotSelections[selectedWeekdayForBulkModal]?.[slotTimeHHMM]) }}
+                    {{ formatUserSelectionStatus(bulkWeekdaySlotSelections[selectedWeekdayForBulkModal]?.[slotRep.timeHHMM]) }}
                   </div>
                 </li>
               </ul>
@@ -267,6 +284,8 @@ const props = defineProps({
 const eventDisplayNameRef = ref('');
 const eventUrlRef = ref('');
 const locationUidRef = ref('');
+const estimatedTimeRef = ref(''); // 追加
+const locationAddressRef = ref(''); // 開催地住所を格納
 
 const formatDateForInput = (date) => date.toISOString().split('T')[0];
 const todayForDefaults = new Date();
@@ -280,6 +299,50 @@ const formattedRecruitmentPeriod = computed(() => {
   const endDate = new Date(currentEndDate.value);
   return `${startDate.toLocaleDateString('ja-JP')} - ${endDate.toLocaleDateString('ja-JP')}`;
 });
+
+const parsedEstimatedTimeMinutes = computed(() => {
+  if (!estimatedTimeRef.value) return 0;
+  const timeStr = String(estimatedTimeRef.value).trim();
+
+  // 文字列からすべての数値を抽出
+  const numbers = (timeStr.match(/\d+/g) || []).map(Number);
+  console.log("抽出された数値:", numbers);
+
+  if (numbers.length === 0) {
+    return 0;
+  }
+
+  // 抽出された数値の中で最大のものを所要時間とする
+  const maxMinutes = Math.max(...numbers);
+
+  return maxMinutes > 0 ? maxMinutes : 0;
+});
+
+function formatSlotTimeRange(startTimeUTC, durationMinutes) {
+  if (!startTimeUTC) return "時刻不明";
+  
+  try {
+    const startDate = new Date(startTimeUTC);
+    const startTimeFormatted = startDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
+
+    if (durationMinutes <= 0) {
+      return startTimeFormatted; // 所要時間がない場合は開始時刻のみ
+    }
+
+    const endDate = new Date(startDate.getTime() + durationMinutes * 60000);
+    const endTimeFormatted = endDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
+
+    return `${startTimeFormatted}～${endTimeFormatted}`;
+  } catch (e) {
+    console.error("Error formatting slot time range:", startTimeUTC, durationMinutes, e);
+    try {
+        // Fallback to just start time if range formatting fails
+        return new Date(startTimeUTC).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
+    } catch {
+        return "時刻エラー";
+    }
+  }
+}
 
 const schedule = ref({});
 const loading = ref(false);
@@ -325,15 +388,17 @@ const weekdayRepresentativeSlots = computed(() => {
         result[dayIndex] = slotsForDate
           .map(slot => {
             try {
-              // スロットの開始時刻を 'HH:MM' 形式 (Asia/Tokyo) で取得
-              return new Date(slot.originalStartTimeUTC).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
+              return {
+                timeHHMM: new Date(slot.originalStartTimeUTC).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' }),
+                originalStartTimeUTC: slot.originalStartTimeUTC
+              };
             } catch (e) {
-              console.error("Error formatting time for representative slot:", slot.originalStartTimeUTC, e);
+              console.error("Error processing slot for representative: ", slot.originalStartTimeUTC, e);
               return null;
             }
           })
-          .filter(time => time !== null)
-          .sort((a, b) => a.localeCompare(b)); // 時刻文字列としてソート
+          .filter(s => s !== null)
+          .sort((a, b) => a.timeHHMM.localeCompare(b.timeHHMM));
         foundWeekdays.add(dayIndex);
       }
     }
@@ -352,7 +417,17 @@ const weekdayRepresentativeSlots = computed(() => {
 const modalTitleId = 'unifiedModalTitle';
 const modalTitleComputed = computed(() => {
   if (modalMode.value === 'date' && selectedDateForModal.value) {
-    return formatDate(selectedDateForModal.value);
+    let title = formatDate(selectedDateForModal.value);
+    if (parsedEstimatedTimeMinutes.value > 0 && slotsForModal.value && slotsForModal.value.length > 0 && slotsForModal.value[0].originalStartTimeUTC) {
+      const firstSlotTime = new Date(slotsForModal.value[0].originalStartTimeUTC);
+      const endTime = new Date(firstSlotTime.getTime() + parsedEstimatedTimeMinutes.value * 60000);
+      try {
+        title += ` (終了目安: ${endTime.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })})`;
+      } catch (e) {
+        console.error("Error formatting end time for modal title:", e);
+      }
+    }
+    return title;
   } else if (modalMode.value === 'weekdayBulk' && selectedWeekdayForBulkModal.value !== null) {
     return `${weekdayLabels[selectedWeekdayForBulkModal.value]}曜日の一括設定`;
   }
@@ -689,6 +764,17 @@ async function fetchUsername() {
   }
 }
 
+const googleMapsUrl = computed(() => {
+  if (!locationAddressRef.value) return '#';
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(locationAddressRef.value)}`;
+});
+
+function openGoogleMaps() {
+  if (locationAddressRef.value) {
+    window.open(googleMapsUrl.value, '_blank', 'noopener,noreferrer');
+  }
+}
+
 async function fetchScheduleData(eventUrl, dateFrom, dateTo, locationUid) {
   if (!eventUrl || !dateFrom || !dateTo || !locationUid) {
     console.warn('[ScheduleFetch] Missing parameters for fetchScheduleData. Required: eventUrl, dateFrom, dateTo, locationUid. Received:', { eventUrl, dateFrom, dateTo, locationUid });
@@ -825,6 +911,10 @@ async function fetchEventDetailsBySlugs(orgSlug, eventSlug) {
     currentStartDate.value = formatDateForInput(new Date(eventDetails.startDate));
     currentEndDate.value = formatDateForInput(new Date(eventDetails.endDate));
     eventDisplayNameRef.value = eventDetails.name;
+    eventUrlRef.value = eventDetails.event_url; // イベントURLを更新
+    locationUidRef.value = eventDetails.location_uid; // location_uid を保存
+    estimatedTimeRef.value = eventDetails.estimated_time; // 所要時間を保存
+    locationAddressRef.value = eventDetails.location_address; // ★ 開催地住所を保存
 
     // データ取得後、スケジュールデータをフェッチ
     if (eventUrlRef.value && currentStartDate.value && currentEndDate.value && locationUidRef.value) {
@@ -1411,7 +1501,7 @@ function isSlotSoldOut(slotUtcTime) {
 .date-header {
   min-width: auto; /* 最小幅を解除 */
   width: 100%;    /* 幅を100%にする */
-  padding: 5px; /* 10px から変更 */
+  padding:  5px; /* 10px から変更 */
   font-weight: bold;
   text-align: left; 
   padding-bottom: 3px; /* 5px から変更 */

@@ -6,9 +6,12 @@ CREATE TABLE IF NOT EXISTS events (
     end_date DATE NOT NULL,
     location_uid VARCHAR(255) NULL,
     max_participants INT NULL,
+    estimated_time VARCHAR(255) NULL,
+    location_name VARCHAR(255) NULL,
+    location_address TEXT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMP NULL -- Add deleted_at column
+    deleted_at TIMESTAMP NULL
 );
 
 -- ユーザーの選択情報を格納するテーブル
@@ -19,7 +22,7 @@ CREATE TABLE IF NOT EXISTS user_event_selections (
     selections_json JSON NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMP NULL, -- Add deleted_at column
+    deleted_at TIMESTAMP NULL,
     UNIQUE KEY unique_user_event (username, event_url),
     FOREIGN KEY (event_url) REFERENCES events(event_url)
 );

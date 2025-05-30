@@ -61,6 +61,24 @@
           <p v-if="event.maxParticipants" class="event-card-details">
             <strong>チーム人数:</strong> {{ event.maxParticipants }}人
           </p>
+          <p v-if="event.location_name" class="event-card-details">
+            <strong>開催地:</strong> {{ event.location_name }}
+            <button 
+              v-if="event.location_address"
+              @click.stop="openGoogleMaps(event.location_address)"
+              class="button-map-link ml-2"
+              title="Google Mapsで開く"
+              aria-label="Google Mapsで開催地を開く"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline-block" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" />
+              </svg>
+              地図
+            </button>
+          </p>
+          <p v-if="event.estimated_time" class="event-card-details">
+            <strong>所要時間:</strong> {{ event.estimated_time }}
+          </p>
           <p class="event-card-url">
             <strong>URL:</strong> <a :href="event.eventUrl" target="_blank" @click.stop class="event-url-link">{{ event.eventUrl }}</a>
           </p>
@@ -153,7 +171,10 @@ async function fetchEvents() {
         ...event,
         eventUrl: event.event_url,
         locationUid: event.location_uid,
-        maxParticipants: event.maxParticipants, // Ensure this is mapped
+        maxParticipants: event.maxParticipants,
+        estimated_time: event.estimated_time,
+        location_name: event.location_name,
+        location_address: event.location_address, // ★ location_address を追加
         hasCurrentUserSubmittedStatus: event.hasCurrentUserSubmittedStatus,
         submittedUsersCount: event.submittedUsersCount,
     }));
@@ -292,6 +313,13 @@ async function deleteEvent(eventUrl, eventName) {
     errorMessage.value = `イベントの削除に失敗しました: ${err.message}`;
   } finally {
     loading.value = false;
+  }
+}
+
+function openGoogleMaps(address) {
+  if (address) {
+    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
   }
 }
 
@@ -514,8 +542,8 @@ onMounted(() => {
   border-radius: 0.5rem; /* rounded-lg */
   box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); /* shadow-sm */
   transition: all 0.15s ease-in-out;
-  font-size: 0.875rem; /* text-sm */
-  margin-right: 0.5rem; /* 他のボタンとの間隔 */
+  border: none;
+  cursor: pointer;
 }
 .button-primary:hover {
   background-color: #4f46e5; /* hover:bg-indigo-600 */
@@ -531,21 +559,19 @@ onMounted(() => {
 .action-buttons-group {
   /* Tailwind: space-x-2 */
   display: flex;
-  /* margin-left: auto; */ /* 右寄せにする場合 */
-}
-.action-buttons-group > button:not(:last-child) {
-    margin-right: 0.5rem; /* space-x-2 */
+  gap: 0.5rem; /* gap-2 */
 }
 
-.button-edit {
-  /* Tailwind: text-sm bg-yellow-400 hover:bg-yellow-500 text-yellow-800 font-medium py-2 px-3 rounded-lg shadow-sm hover:shadow-md transition-all transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-yellow-300 */
-  font-size: 0.875rem; /* text-sm */
-  background-color: #facc15; /* bg-yellow-400 */
-  color: #854d0e; /* text-yellow-800 */
+.button-primary,
+.button-secondary,
+.button-edit,
+.button-delete {
+  /* Tailwind: py-2 px-4 rounded-md font-medium text-sm shadow-sm hover:shadow-md transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-opacity-50 */
+  padding: 0.5rem 1rem; /* py-2 px-4 */
+  border-radius: 0.375rem; /* rounded-md */
   font-weight: 500; /* font-medium */
-  padding: 0.5rem 0.75rem; /* py-2 px-3 */
-  border-radius: 0.5rem; /* rounded-lg */
-  box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); /* shadow-sm */
+  font-size: 0.875rem; /* text-sm */
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-sm */
   transition: all 0.15s ease-in-out;
 }
 .button-edit:hover {
@@ -579,7 +605,21 @@ onMounted(() => {
 .button-secondary:focus {
   outline: 2px solid transparent;
   outline-offset: 2px;
-  box-shadow: 0 0 0 2px #9ca3af; /* focus:ring-2 focus:ring-gray-400 */
+  box-shadow: 0 0 0 2px #9ca3af80; /* focus:ring-gray-400 */
+}
+
+.button-edit {
+  /* Tailwind: bg-yellow-400 hover:bg-yellow-500 text-yellow-800 focus:ring-yellow-300 */
+  background-color: #FBBF24; /* bg-yellow-400 */
+  color: #92400E; /* text-yellow-800 */
+}
+.button-edit:hover {
+  background-color: #F59E0B; /* hover:bg-yellow-500 */
+}
+.button-edit:focus {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px #fcd34d80; /* focus:ring-yellow-300 */
 }
 
 .button-delete {
@@ -737,6 +777,16 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
+.button-map-link:hover {
+  background-color: #BFDBFE; /* hover:bg-blue-200 */
+  box-shadow: 0 2px 4px -1px rgba(0,0,0,0.06), 0 2px 4px -1px rgba(0,0,0,0.06); /* hover:shadow */
+}
+.button-map-link svg {
+  height: 0.75rem; /* h-3 (元の h-4 から縮小) */
+  width: 0.75rem;  /* w-3 (元の w-4 から縮小) */
+  margin-right: 0.125rem; /* アイコンとテキストの間隔を少し詰める */
+}
+
 .status-badge {
   padding: 1.2em 0.8em;
   border-radius: 0.375rem; /* rounded-md */
@@ -758,9 +808,9 @@ onMounted(() => {
 }
 
 .input-field {
-  /* Tailwind: shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md */
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  border: 1px solid #d1d5db; /* border-gray-300 */
+  /* Tailwind: shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md p-2 */
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-sm */
+  border: 1px solid #D1D5DB; /* border-gray-300 */
   border-radius: 0.375rem; /* rounded-md */
   padding: 0.5rem 0.75rem; /* py-2 px-3 */
   font-size: 0.875rem; /* sm:text-sm */
