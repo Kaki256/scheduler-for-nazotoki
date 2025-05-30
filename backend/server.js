@@ -8,6 +8,7 @@ const mysql = require('mysql2/promise');
 const fetch = require('node-fetch');
 const fs = require('fs');
 const path = require('path');
+const cheerio = require('cheerio'); // 追加
 
 const app = express();
 
@@ -199,7 +200,8 @@ app.get('/api/events', async (req, res) => {
       locationUid: row.location_uid || null,
       maxParticipants: row.max_participants,
       submittedUsersCount: parseInt(row.submittedUsersCount, 10) || 0,
-      hasCurrentUserSubmittedStatus: !!row.currentUserHasSubmittedStatus
+      hasCurrentUserSubmittedStatus: !!row.currentUserHasSubmittedStatus,
+      mainImageUrl: `/events/${encodeURIComponent(row.event_url)}/main-image` // 修正: /api プレフィックスを削除
     }));
     res.json(formattedRows);
     console.log('Fetched events with submission status for user:', currentUsername, 'Formatted events:', formattedRows.length);
@@ -458,6 +460,47 @@ app.delete('/api/events/:eventUrlEncoded', async (req, res) => {
 });
 
 // ★★★ END: Event API Endpoints ★★★
+
+// ★★★ START: Event Main Image Endpoint ★★★
+app.get('/api/events/:eventUrlEncoded/main-image', async (req, res) => {
+  const eventUrlEncoded = req.params.eventUrlEncoded;
+  let eventUrl;
+  try {
+    eventUrl = decodeURIComponent(eventUrlEncoded);
+  } catch (e) {
+    console.error('Error decoding event URL for main image:', e);
+    return res.status(400).json({ error: 'Invalid event URL encoding for main image.' });
+  }
+
+  try {
+    // イベントページからHTMLを取得
+    const response = await fetch(eventUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch event page: ${response.statusText}`);
+    }
+    const html = await response.text();
+    const $ = cheerio.load(html);
+
+    // 指定されたセレクタで画像要素を取得
+    // <img src="https://static.escape.id/i/o/tumbleweed/PhoWH0op5lndxwpqLeYnhgyWiA20Fgxh.png?t=sm" alt="" class="w-auto h-[360px] mx-auto md:![view-transition-name:none]" loading="lazy" style="view-transition-name:ev__img__tumbleweed__yawfwel">
+    let imageUrl = $('img[style*="view-transition-name:ev__img__"]').attr('src');
+
+    if (!imageUrl) {
+      // もし最初のセレクタで見つからなければ、他の可能性も試す (例: og:image)
+      imageUrl = $('meta[property="og:image"]').attr('content');
+    }
+
+    if (imageUrl) {
+      res.json({ imageUrl });
+    } else {
+      res.status(404).json({ error: 'Main image not found on the event page.' });
+    }
+  } catch (error) {
+    console.error(`Error fetching main image for ${eventUrl}:`, error);
+    res.status(500).json({ error: 'Error fetching main image.' });
+  }
+});
+// ★★★ END: Event Main Image Endpoint ★★★
 
 // ★★★ START: User Event Selections API Endpoints ★★★
 

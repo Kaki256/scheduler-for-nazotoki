@@ -49,6 +49,8 @@
     <div v-if="sortedEvents.length > 0" class="events-grid">
       <div v-for="event in sortedEvents" :key="event.eventUrl"
           class="event-card">
+        <img v-if="event.mainImageUrlFetched" :src="event.mainImageUrlFetched" alt="Event Image" class="event-card-image" @error="onImageError(event)"/>
+        <div v-else class="event-card-image-placeholder">画像準備中...</div>
         <div class="event-card-content">
           <div class="flex justify-between items-start mb-2">
             <h2 class="event-card-title flex-grow" :title="event.name || extractEventName(event.eventUrl)">
@@ -156,6 +158,9 @@ async function fetchEvents() {
         maxParticipants: event.maxParticipants, // Ensure this is mapped
         hasCurrentUserSubmittedStatus: event.hasCurrentUserSubmittedStatus,
         submittedUsersCount: event.submittedUsersCount,
+        mainImageUrl: event.mainImageUrl, // バックエンドから提供される画像のAPIパス
+        mainImageUrlFetched: null, // 実際に取得した画像URLを格納
+        imageError: false // 画像読み込みエラーフラグ
     }));
 
     if (events.value.length === 0 && !errorMessage.value) {
@@ -167,8 +172,36 @@ async function fetchEvents() {
     events.value = []; // エラー時はリストを空にする
   } finally {
     loading.value = false;
+    // イベント取得後に各イベントの画像を取得
+    events.value.forEach(event => {
+      if (event.mainImageUrl) {
+        fetchEventImage(event);
+      }
+    });
   }
 }
+
+async function fetchEventImage(event) {
+  try {
+    const response = await fetch(`${API_BASE_URL}${event.mainImageUrl}`); // mainImageUrlはAPIパスなので、BASE_URLを付与
+    if (!response.ok) {
+      throw new Error('Image fetch failed');
+    }
+    const imageData = await response.json();
+    event.mainImageUrlFetched = imageData.imageUrl;
+    event.imageError = false;
+  } catch (err) {
+    console.error('Failed to fetch event image for:', event.eventUrl, err);
+    event.imageError = true;
+    event.mainImageUrlFetched = null; // エラー時はnullに戻すか、デフォルト画像パスを設定
+  }
+}
+
+const onImageError = (event) => {
+  console.warn('Image failed to load for event:', event.eventUrl, 'Attempted URL:', event.mainImageUrlFetched);
+  event.imageError = true;
+  event.mainImageUrlFetched = 'https://via.placeholder.com/400x200.png?text=No+Image'; // エラー時の代替画像
+};
 
 const fetchEventsWithNewUser = () => {
   if (!currentUsername.value) {
@@ -450,13 +483,30 @@ onMounted(() => {
   flex-direction: column;
 }
 .event-card:hover {
-  box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); /* hover:shadow-2xl */
+  transform: translateY(-5px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
+}
+
+.event-card-image {
+  width: 100%;
+  height: 200px; /* 固定の高さを設定 */
+  object-fit: cover; /* アスペクト比を維持しつつ、要素にフィットするように画像をトリミング */
+  border-bottom: 1px solid #e2e8f0; /* Tailwind slate-200 */
+}
+
+.event-card-image-placeholder {
+  width: 100%;
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f1f5f9; /* Tailwind slate-100 */
+  color: #64748b; /* Tailwind slate-500 */
+  border-bottom: 1px solid #e2e8f0; /* Tailwind slate-200 */
 }
 
 .event-card-content {
-  /* Tailwind: p-6 flex-grow */
-  padding: 1.5rem; /* p-6 */
-  flex-grow: 1;
+  padding: 20px; /* パディングを少し増やす */
 }
 
 .event-card-title {
@@ -621,6 +671,24 @@ onMounted(() => {
 .event-card:hover {
   transform: translateY(-5px);
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
+}
+
+.event-card-image {
+  width: 100%;
+  height: 200px; /* 固定の高さを設定 */
+  object-fit: cover; /* アスペクト比を維持しつつ、要素にフィットするように画像をトリミング */
+  border-bottom: 1px solid #e2e8f0; /* Tailwind slate-200 */
+}
+
+.event-card-image-placeholder {
+  width: 100%;
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f1f5f9; /* Tailwind slate-100 */
+  color: #64748b; /* Tailwind slate-500 */
+  border-bottom: 1px solid #e2e8f0; /* Tailwind slate-200 */
 }
 
 .event-card-content {
