@@ -3,7 +3,10 @@
     <div class="header-section">
       <h1 class="event-title">{{ eventDisplayNameRef || 'イベント' }}日程調整</h1>
       <p class="event-subtitle">参加可能な日時を選択してください。</p>
-      <router-link to="/events" class="button back-to-list-button">イベント一覧に戻る</router-link>
+      <div class="header-buttons">
+        <router-link :to="{ name: 'EventSummary', params: { orgSlug: props.orgSlug, eventSlug: props.eventSlug } }" class="button button-primary summary-link">出欠状況ページに行く</router-link>
+        <router-link to="/events" class="button button-secondary back-to-list-link">イベント一覧ページに行く</router-link>
+      </div>
     </div>
 
     <div class="controls-section">
@@ -39,7 +42,7 @@
             @change="onUsernameChange"
           />
         </div>
-        <div v-if="locationAddressRef">
+        <!-- <div v-if="locationAddressRef">
           <label for="locationAddressDisplay" class="input-label">開催場所:</label>
           <a 
             :href="googleMapsUrl" 
@@ -55,7 +58,7 @@
           >
             {{ locationAddressRef }}
           </a>
-        </div>
+        </div> -->
       </div>
       <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
     </div>
@@ -271,10 +274,11 @@
 
 <script setup>
 import { computed, ref, reactive, watch, onMounted, nextTick, onUnmounted } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router'; // useRouter をインポート
 import axios from 'axios'; // axios をインポート
 
 const route = useRoute();
+const router = useRouter(); // router インスタンスを取得
 
 const props = defineProps({
   orgSlug: { type: String, required: true },
@@ -1322,24 +1326,28 @@ function isSlotSoldOut(slotUtcTime) {
 
 
 .header-section {
-  margin-bottom: 2rem;
-  text-align: center;
-  margin-bottom: 30px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* 中央揃えにする場合 */
+  margin-bottom: 20px;
+  text-align: center; /* テキストも中央揃えにする場合 */
 }
 
 .event-title {
-  font-size: 1.75rem; /* Slightly smaller */
-  font-weight: 600;
-  color: #343a40;
-  margin-bottom: 0.3rem;
+  font-size: 2em;
+  margin-bottom: 0.5em;
+  color: #333;
 }
 
 .event-subtitle {
-  color: #6c757d; /* Bootstrap secondary text color */
-  font-size: 0.9rem;
-  margin-top: 0.1rem;
+  font-size: 1.1em;
+  margin-bottom: 1em;
+  color: #555;
+}
+
+.header-buttons {
+  display: flex;
+  gap: 10px; /* ボタン間のスペース */
 }
 
 .controls-section {
@@ -1415,20 +1423,27 @@ function isSlotSoldOut(slotUtcTime) {
   text-decoration: none;
 }
 .button:hover:not(:disabled) {
-   box-shadow: 0 2px 4px rgba(0,0,0,0.07);
-   transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.07);
+  transform: translateY(-1px);
 }
-.button:active:not(:disabled) {
-  transform: translateY(0px);
-  box-shadow: inset 0 1px 2px rgba(0,0,0,0.05); /* Inset shadow on active */
+
+.button-primary {
+  background-color: #4A90E2; /* Primary action color (e.g., blue) */
+  color: white;
 }
-.button:focus-visible { /* Use focus-visible for better accessibility */
-  outline: none;
-  box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.35);
+
+.button-primary:hover {
+  background-color: #357ABD; /* Darker shade for hover */
 }
-.button:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
+
+.button-secondary {
+  background-color: #f0f0f0; /* Secondary action color (e.g., light gray) */
+  color: #333;
+  border: 1px solid #ccc;
+}
+
+.button-secondary:hover {
+  background-color: #e0e0e0;
 }
 
 .primary-button {

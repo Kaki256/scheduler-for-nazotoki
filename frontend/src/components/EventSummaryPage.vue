@@ -1,9 +1,12 @@
 <template>
-  <div class="container p-3"> <!-- container padding reduced -->
-    <header class="mb-4"> <!-- header margin-bottom reduced -->
+  <div class="container p-3">
+    <header class="mb-4">
       <div class="flex items-center justify-between">
         <h1 class="text-3xl font-bold text-indigo-700">{{ eventName }} - 出欠状況</h1>
-        <button @click="goBack" class="button-secondary">一覧に戻る</button>
+        <div>
+          <button @click="goToSchedulePage" class="button button-primary schedule-link mr-2">日程調整ページに行く</button>
+          <button @click="goBack" class="button button-secondary event-list-link">イベント一覧ページに行く</button>
+        </div>
       </div>
       <p v-if="eventStartDate && eventEndDate" class="text-gray-600 text-sm mt-1">
         対象期間: {{ formatDateForDisplay(eventStartDate) }} 〜 {{ formatDateForDisplay(eventEndDate) }}
@@ -919,6 +922,10 @@ function goBack() {
   router.push({ name: 'EventList' });
 }
 
+function goToSchedulePage() {
+  router.push({ name: 'SchedulePage', params: { orgSlug: props.orgSlug, eventSlug: props.eventSlug } });
+}
+
 function handleDragStart(event, user, fromTeamIdx, memberIdx) {
   draggedItem.value = { user, fromTeamIndex: fromTeamIdx, memberIndexInTeam: memberIdx };
   if (event.dataTransfer) {
@@ -1034,24 +1041,33 @@ onMounted(() => {
   min-height: 100vh;
 }
 
-.button-secondary {
-  background-color: #e5e7eb;
-  color: #374151;
+.button {
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  text-decoration: none;
   font-weight: 500;
-  padding: 0.4rem 0.8rem; /* Reduced padding */
-  border-radius: 0.5rem;
-  box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
-  transition: all 0.15s ease-in-out;
-  font-size: 0.8rem; /* Reduced font size */
+  transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+  border: 1px solid transparent;
+  cursor: pointer; /* Add cursor pointer for buttons */
 }
+
+.button-primary {
+  background-color: #4A90E2; /* Primary action color (e.g., blue) */
+  color: white;
+}
+
+.button-primary:hover {
+  background-color: #357ABD; /* Darker shade for hover */
+}
+
+.button-secondary {
+  background-color: #f0f0f0; /* Secondary action color (e.g., light gray) */
+  color: #333;
+  border: 1px solid #ccc;
+}
+
 .button-secondary:hover {
-  background-color: #d1d5db;
-  box-shadow: 0 2px 4px -1px rgba(0,0,0,0.1), 0 1px 2px -1px rgba(0,0,0,0.06); /* Adjusted shadow */
-}
-.button-secondary:focus {
-  outline: 2px solid transparent;
-  outline-offset: 2px;
-  box-shadow: 0 0 0 2px #9ca3af;
+  background-color: #e0e0e0;
 }
 
 .loading-message, .no-data-message {
