@@ -190,10 +190,10 @@
               <p class="text-sm text-gray-700 font-semibold">最適日時:</p>
               <ul class="text-xs text-gray-600 list-none pl-1">
                 <li v-for="(slotDetail, slotIdx) in team.bestSlotsDetails" :key="slotIdx" class="flex items-center">
-                  <span v-if="vacancyStatusMap[slotDetail.utc]" :class="getVacancyStatusClass(vacancyStatusMap[slotDetail.utc])" class="mr-1 vacancy-indicator w-4 text-center">
+                  <span v-if="vacancyStatusMap[slotDetail.utc]" :class="getVacancyStatusClass(vacancyStatusMap[slotDetail.utc])" class="mr-1 vacancy-indicator w-6 text-center inline-block">
                     {{ formatVacancyStatus(vacancyStatusMap[slotDetail.utc]) }}
                   </span>
-                  <span v-else class="mr-1 vacancy-indicator text-gray-400 w-4 text-center">?</span>
+                  <span v-else class="mr-1 vacancy-indicator text-gray-400 w-6 text-center inline-block">?</span>
                   <span>{{ slotDetail.dateLabel }} {{ slotDetail.timeLabel }}</span>
                 </li>
               </ul>
@@ -895,7 +895,7 @@ function formatVacancyStatus(vacancyType) {
     'MANY': '〇',
     'FEW': '△',
     'FULL': '×',
-    'NOT_IN_SALES_PERIOD': '×',
+    'NOT_IN_SALES_PERIOD': '-',
   };
   return statusMap[vacancyType] !== undefined ? statusMap[vacancyType] : '？'; // Default to '？' if type is unexpected
 }
