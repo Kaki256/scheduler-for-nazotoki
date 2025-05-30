@@ -172,9 +172,9 @@ app.get('/api/events', async (req, res) => {
         e.end_date,
         e.location_uid,
         e.max_participants,
-        e.estimated_time
+        e.estimated_time, 
         e.location_name,
-        e.location_address
+        e.location_address,
         (
           SELECT COUNT(DISTINCT ues.username)
           FROM user_event_selections ues
