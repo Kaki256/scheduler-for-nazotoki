@@ -61,6 +61,12 @@
           <p v-if="event.maxParticipants" class="event-card-details">
             <strong>チーム人数:</strong> {{ event.maxParticipants }}人
           </p>
+          <p v-if="event.location_name" class="event-card-details">
+            <strong>開催地:</strong> {{ event.location_name }}
+          </p>
+          <p v-if="event.estimated_time" class="event-card-details">
+            <strong>所要時間:</strong> {{ event.estimated_time }}
+          </p>
           <p class="event-card-url">
             <strong>URL:</strong> <a :href="event.eventUrl" target="_blank" @click.stop class="event-url-link">{{ event.eventUrl }}</a>
           </p>
@@ -153,7 +159,9 @@ async function fetchEvents() {
         ...event,
         eventUrl: event.event_url,
         locationUid: event.location_uid,
-        maxParticipants: event.maxParticipants, // Ensure this is mapped
+        maxParticipants: event.maxParticipants,
+        estimated_time: event.estimated_time,
+        location_name: event.location_name,
         hasCurrentUserSubmittedStatus: event.hasCurrentUserSubmittedStatus,
         submittedUsersCount: event.submittedUsersCount,
     }));

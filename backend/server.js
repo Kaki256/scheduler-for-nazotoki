@@ -172,6 +172,9 @@ app.get('/api/events', async (req, res) => {
         e.end_date,
         e.location_uid,
         e.max_participants,
+        e.estimated_time
+        e.location_name,
+        e.location_address
         (
           SELECT COUNT(DISTINCT ues.username)
           FROM user_event_selections ues
@@ -198,6 +201,9 @@ app.get('/api/events', async (req, res) => {
       endDate: row.end_date || null,
       locationUid: row.location_uid || null,
       maxParticipants: row.max_participants,
+      estimated_time: row.estimated_time,
+      location_name: row.location_name,
+      location_address: row.location_address,
       submittedUsersCount: parseInt(row.submittedUsersCount, 10) || 0,
       hasCurrentUserSubmittedStatus: !!row.currentUserHasSubmittedStatus
     }));
@@ -223,7 +229,7 @@ app.get('/api/events/:eventUrlEncoded', async (req, res) => {
 
   try {
     // Modify query to exclude logically deleted events
-    const [rows] = await dbPool.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants FROM events WHERE event_url = ? AND deleted_at IS NULL', [eventUrl]);
+    const [rows] = await dbPool.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants, estimated_time, location_name, location_address FROM events WHERE event_url = ? AND deleted_at IS NULL', [eventUrl]);
     if (rows.length === 0) {
       return res.status(404).json({ error: '指定されたイベントURLが見つかりません。' });
     }
@@ -233,7 +239,10 @@ app.get('/api/events/:eventUrlEncoded', async (req, res) => {
       startDate: event.start_date || null,
       endDate: event.end_date || null,
       locationUid: event.location_uid || null,
-      maxParticipants: event.max_participants
+      maxParticipants: event.max_participants,
+      estimated_time: event.estimated_time,
+      location_name: event.location_name,
+      location_address: event.location_address
     });
     console.log('Fetched event:', event);
   } catch (dbError) {
@@ -244,7 +253,7 @@ app.get('/api/events/:eventUrlEncoded', async (req, res) => {
 
 // POST a new event
 app.post('/api/events', async (req, res) => {
-  const { eventUrl, name, startDate, endDate, locationUid, maxParticipants } = req.body;
+  const { eventUrl, name, startDate, endDate, locationUid, maxParticipants, estimatedTime, locationName, locationAddress } = req.body;
 
   if (!eventUrl || !startDate || !endDate) {
     return res.status(400).json({ error: 'eventUrl, startDate, endDate are required fields.' });
@@ -268,25 +277,31 @@ app.post('/api/events', async (req, res) => {
       const existingEvent = existingEvents[0];
       if (existingEvent.deleted_at !== null) {
         // Event exists but is logically deleted, so "undelete" and update it
-        const updateQuery = 'UPDATE events SET name = ?, start_date = ?, end_date = ?, location_uid = ?, max_participants = ?, deleted_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE event_url = ?';
+        const updateQuery = 'UPDATE events SET name = ?, start_date = ?, end_date = ?, location_uid = ?, max_participants = ?, estimated_time = ?, location_name = ?, location_address = ?, deleted_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE event_url = ?';
         await connection.execute(updateQuery, [
           name || null,
           startDate,
           endDate,
           locationUid || null,
           maxParticipants === undefined ? null : maxParticipants,
+          estimatedTime || null, // 追加
+          locationName || null,  // 追加
+          locationAddress || null, // 追加
           normalizedEventUrl
         ]);
         await connection.commit();
 
-        const [updatedEventRows] = await connection.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants FROM events WHERE event_url = ?', [normalizedEventUrl]);
+        const [updatedEventRows] = await connection.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants, estimated_time, location_name, location_address FROM events WHERE event_url = ?', [normalizedEventUrl]);
         const updatedEvent = updatedEventRows[0];
         return res.status(200).json({ // Return 200 OK as it's an update/undelete
           ...updatedEvent,
           startDate: updatedEvent.start_date || null,
           endDate: updatedEvent.end_date || null,
           locationUid: updatedEvent.location_uid || null,
-          maxParticipants: updatedEvent.max_participants
+          maxParticipants: updatedEvent.max_participants,
+          estimated_time: updatedEvent.estimated_time, // 追加
+          location_name: updatedEvent.location_name,    // 追加
+          location_address: updatedEvent.location_address // 追加
         });
       } else {
         // Event exists and is active, so it's a conflict
@@ -295,18 +310,21 @@ app.post('/api/events', async (req, res) => {
       }
     } else {
       // Event does not exist, so insert a new one
-      const insertQuery = 'INSERT INTO events (event_url, name, start_date, end_date, location_uid, max_participants) VALUES (?, ?, ?, ?, ?, ?)';
-      await connection.execute(insertQuery, [normalizedEventUrl, name || null, startDate, endDate, locationUid || null, maxParticipants === undefined ? null : maxParticipants]);
+      const insertQuery = 'INSERT INTO events (event_url, name, start_date, end_date, location_uid, max_participants, estimated_time, location_name, location_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)';
+      await connection.execute(insertQuery, [normalizedEventUrl, name || null, startDate, endDate, locationUid || null, maxParticipants === undefined ? null : maxParticipants, estimatedTime || null, locationName || null, locationAddress || null]);
       await connection.commit();
 
-      const [newEventRows] = await connection.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants FROM events WHERE event_url = ? AND deleted_at IS NULL', [normalizedEventUrl]);
+      const [newEventRows] = await connection.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants, estimated_time, location_name, location_address FROM events WHERE event_url = ? AND deleted_at IS NULL', [normalizedEventUrl]);
       const newEvent = newEventRows[0];
       return res.status(201).json({
           ...newEvent,
           startDate: newEvent.start_date || null,
           endDate: newEvent.end_date || null,
           locationUid: newEvent.location_uid || null,
-          maxParticipants: newEvent.max_participants
+          maxParticipants: newEvent.max_participants,
+          estimated_time: newEvent.estimated_time, // 追加
+          location_name: newEvent.location_name,    // 追加
+          location_address: newEvent.location_address // 追加
       });
     }
   } catch (dbError) {
@@ -333,10 +351,10 @@ app.put('/api/events/:eventUrlEncoded', async (req, res) => {
     return res.status(400).json({ error: 'Invalid event URL encoding for update.' });
   }
 
-  const { name, startDate, endDate, maxParticipants, locationUid, eventUrl: newEventUrl } = req.body;
+  const { name, startDate, endDate, maxParticipants, locationUid, eventUrl: newEventUrl, estimatedTime, locationName, locationAddress } = req.body;
 
   // Basic validation: at least one field to update must be provided.
-  if (name === undefined && startDate === undefined && endDate === undefined && maxParticipants === undefined && locationUid === undefined && newEventUrl === undefined) {
+  if (name === undefined && startDate === undefined && endDate === undefined && maxParticipants === undefined && locationUid === undefined && newEventUrl === undefined && estimatedTime === undefined && locationName === undefined && locationAddress === undefined) {
     return res.status(400).json({ error: '更新するデータがありません。少なくとも一つのフィールドを指定してください。' });
   }
   
@@ -364,6 +382,9 @@ app.put('/api/events/:eventUrlEncoded', async (req, res) => {
     if (endDate !== undefined) updateFields.end_date = endDate;
     if (maxParticipants !== undefined) updateFields.max_participants = maxParticipants === null ? null : Number(maxParticipants);
     if (locationUid !== undefined) updateFields.location_uid = locationUid;
+    if (estimatedTime !== undefined) updateFields.estimated_time = estimatedTime; // 追加
+    if (locationName !== undefined) updateFields.location_name = locationName;    // 追加
+    if (locationAddress !== undefined) updateFields.location_address = locationAddress; // 追加
     
     let finalEventUrl = originalEventUrl;
     if (newEventUrl !== undefined && newEventUrl !== originalEventUrl) {
@@ -394,7 +415,7 @@ app.put('/api/events/:eventUrlEncoded', async (req, res) => {
 
     await connection.commit();
 
-    const [updatedEventRows] = await connection.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants FROM events WHERE event_url = ? AND deleted_at IS NULL', [finalEventUrl]);
+    const [updatedEventRows] = await connection.execute('SELECT event_url, name, start_date, end_date, location_uid, max_participants, estimated_time, location_name, location_address FROM events WHERE event_url = ? AND deleted_at IS NULL', [finalEventUrl]);
     if (updatedEventRows.length === 0) {
         // This case should ideally not happen if the update was successful and not a URL change to an already deleted one.
         return res.status(404).json({ error: '更新後のイベントが見つかりません。'});
@@ -406,7 +427,10 @@ app.put('/api/events/:eventUrlEncoded', async (req, res) => {
         startDate: updatedEvent.start_date || null,
         endDate: updatedEvent.end_date || null,
         locationUid: updatedEvent.location_uid || null,
-        maxParticipants: updatedEvent.max_participants
+        maxParticipants: updatedEvent.max_participants,
+        estimated_time: updatedEvent.estimated_time, // 追加
+        location_name: updatedEvent.location_name,    // 追加
+        location_address: updatedEvent.location_address // 追加
     });
 
   } catch (dbError) {
@@ -561,8 +585,8 @@ app.get('/api/events/:eventUrlEncoded/summary', async (req, res) => {
   try {
     connection = await dbPool.getConnection();
 
-    // 1. イベント基本情報を取得 (name, start_date, end_date, location_uid, max_participants, deleted_at)
-    const [eventRows] = await connection.execute('SELECT name, start_date, end_date, location_uid, max_participants, deleted_at FROM events WHERE event_url = ?', [eventUrl]);
+    // 1. イベント基本情報を取得 (name, start_date, end_date, location_uid, max_participants, deleted_at, estimated_time, location_name, location_address)
+    const [eventRows] = await connection.execute('SELECT name, start_date, end_date, location_uid, max_participants, deleted_at, estimated_time, location_name, location_address FROM events WHERE event_url = ?', [eventUrl]);
     
     if (eventRows.length === 0) {
       return res.status(404).json({ error: '指定されたイベントURLのイベントが見つかりません。' });
@@ -579,6 +603,9 @@ app.get('/api/events/:eventUrlEncoded/summary', async (req, res) => {
     const eventEndDate = eventDetails.end_date || null;
     const locationUid = eventDetails.location_uid;
     const maxParticipants = eventDetails.max_participants;
+    const estimatedTime = eventDetails.estimated_time; // 追加
+    const locationName = eventDetails.location_name;    // 追加
+    const locationAddress = eventDetails.location_address; // 追加
 
     if (!eventStartDate || !eventEndDate || !locationUid) {
         console.warn(`[SummaryAPI] Event data incomplete for ${eventUrl}. Start: ${eventStartDate}, End: ${eventEndDate}, Location: ${locationUid}`);
@@ -666,6 +693,9 @@ app.get('/api/events/:eventUrlEncoded/summary', async (req, res) => {
       eventStartDate,
       eventEndDate,
       maxParticipants, // レスポンスに追加
+      estimatedTime, // 追加
+      locationName,    // 追加
+      locationAddress, // 追加
       allEventTimeSlotsUTC, // 取得した全スロット情報
       allUsers,
       userSelectionsMap

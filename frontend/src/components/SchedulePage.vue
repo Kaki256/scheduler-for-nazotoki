@@ -267,6 +267,7 @@ const props = defineProps({
 const eventDisplayNameRef = ref('');
 const eventUrlRef = ref('');
 const locationUidRef = ref('');
+const estimatedTimeRef = ref(''); // 追加
 
 const formatDateForInput = (date) => date.toISOString().split('T')[0];
 const todayForDefaults = new Date();
@@ -352,7 +353,30 @@ const weekdayRepresentativeSlots = computed(() => {
 const modalTitleId = 'unifiedModalTitle';
 const modalTitleComputed = computed(() => {
   if (modalMode.value === 'date' && selectedDateForModal.value) {
-    return formatDate(selectedDateForModal.value);
+    let title = formatDate(selectedDateForModal.value);
+    if (estimatedTimeRef.value && slotsForModal.value && slotsForModal.value.length > 0) {
+      const firstSlotTime = new Date(slotsForModal.value[0].originalStartTimeUTC);
+      // estimatedTimeRef.value が "HH:MM" または "H時間M分" 形式と仮定
+      let hours = 0;
+      let minutes = 0;
+      if (estimatedTimeRef.value.includes(':')) {
+        [hours, minutes] = estimatedTimeRef.value.split(':').map(Number);
+      } else if (estimatedTimeRef.value.includes('時間')) {
+        const parts = estimatedTimeRef.value.split('時間');
+        hours = parseInt(parts[0]) || 0;
+        if (parts[1] && parts[1].includes('分')) {
+          minutes = parseInt(parts[1].replace('分', '')) || 0;
+        }
+      } else if (estimatedTimeRef.value.includes('分')){
+        minutes = parseInt(estimatedTimeRef.value.replace('分', '')) || 0;
+      }
+
+      if (hours > 0 || minutes > 0) {
+        const endTime = new Date(firstSlotTime.getTime() + (hours * 60 + minutes) * 60000);
+        title += ` (終了目安: ${endTime.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })})`;
+      }
+    }
+    return title;
   } else if (modalMode.value === 'weekdayBulk' && selectedWeekdayForBulkModal.value !== null) {
     return `${weekdayLabels[selectedWeekdayForBulkModal.value]}曜日の一括設定`;
   }
@@ -825,6 +849,7 @@ async function fetchEventDetailsBySlugs(orgSlug, eventSlug) {
     currentStartDate.value = formatDateForInput(new Date(eventDetails.startDate));
     currentEndDate.value = formatDateForInput(new Date(eventDetails.endDate));
     eventDisplayNameRef.value = eventDetails.name;
+    estimatedTimeRef.value = eventDetails.estimated_time; // 追加
 
     // データ取得後、スケジュールデータをフェッチ
     if (eventUrlRef.value && currentStartDate.value && currentEndDate.value && locationUidRef.value) {

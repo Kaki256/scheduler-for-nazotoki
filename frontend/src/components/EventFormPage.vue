@@ -22,7 +22,7 @@
             <button
               type="button"
               @click="fetchEventDataFromUrl"
-              v-if="event.eventUrl && effectiveMode === 'create'"
+              v-if="event.eventUrl && (effectiveMode === 'create' || effectiveMode === 'edit')"
               class="button-fetch-data ml-2"
               :disabled="loading"
             >
@@ -129,6 +129,9 @@ const event = reactive({
   endDate: '',
   locationUid: '',
   maxParticipants: null, // maxParticipants を追加
+  estimatedTime: '', // 所要時間を追加
+  locationName: '',  // 開催地名を追加
+  locationAddress: '', // 開催地住所を追加
 });
 
 const loading = ref(false);
@@ -162,19 +165,30 @@ const formatDateForInput = (dateString) => {
   }
 };
 
-async function fetchEventDataFromUrl() { // Renamed from fetchLocationUid and extended
-  if (!event.eventUrl || effectiveMode.value === 'edit') {
+async function fetchEventDataFromUrl() {
+  if (!event.eventUrl) { // URLがない場合は何もしない
     return;
   }
   loading.value = true;
   fetchOperationLoading.value = true;
   errorMessage.value = '';
-  // Initialize fields that will be fetched from URL
-  event.name = '';
-  event.startDate = '';
-  event.endDate = '';
+
+  // Store current name, startDate, and endDate if in edit mode
+  const originalName = effectiveMode.value === 'edit' ? event.name : '';
+  const originalStartDate = effectiveMode.value === 'edit' ? event.startDate : '';
+  const originalEndDate = effectiveMode.value === 'edit' ? event.endDate : '';
+
+  // Initialize fields that will be fetched from URL, except for those preserved in edit mode
+  if (effectiveMode.value === 'create') {
+    event.name = '';
+    event.startDate = '';
+    event.endDate = '';
+  }
   event.locationUid = '';
   event.maxParticipants = null;
+  event.estimatedTime = '';
+  event.locationName = '';
+  event.locationAddress = '';
 
   try {
     const backendResponse = await fetch(`${API_BASE_URL}/fetch-html`, {
@@ -214,10 +228,16 @@ async function fetchEventDataFromUrl() { // Renamed from fetchLocationUid and ex
 
     // Event Name
     if (infoDetails.eventName?.[1]) {
-      event.name = infoDetails.eventName[1];
-      console.log('取得したイベント名:', event.name);
+      if (effectiveMode.value === 'create') { // Only update name if in create mode
+        event.name = infoDetails.eventName[1];
+        console.log('取得したイベント名:', event.name);
+      } else {
+        console.log('イベント名 (編集モードでは保持):', originalName);
+        event.name = originalName; // Keep original name in edit mode
+      }
     } else {
       console.warn('イベント名は取得できませんでした。');
+      if (effectiveMode.value === 'edit') event.name = originalName; // Ensure original is kept if fetch fails
     }
 
     // Start Date and End Date
@@ -274,17 +294,29 @@ async function fetchEventDataFromUrl() { // Renamed from fetchLocationUid and ex
     });
 
     if (earliestFirstStartTime) {
-      event.startDate = formatDateForInput(earliestFirstStartTime.toISOString());
-      console.log('設定された最も早い開始日:', event.startDate, earliestFirstStartTime);
+      if (effectiveMode.value === 'create') { // Only update dates if in create mode
+        event.startDate = formatDateForInput(earliestFirstStartTime.toISOString());
+        console.log('設定された最も早い開始日:', event.startDate, earliestFirstStartTime);
+      } else {
+        console.log('開始日 (編集モードでは保持):', originalStartDate);
+        event.startDate = originalStartDate; // Keep original start date in edit mode
+      }
     } else {
       console.warn('有効な開始日は見つかりませんでした。');
+      if (effectiveMode.value === 'edit') event.startDate = originalStartDate; // Ensure original is kept
     }
 
     if (latestLastEndTime) {
-      event.endDate = formatDateForInput(latestLastEndTime.toISOString());
-      console.log('設定された最も遅い終了日:', event.endDate, latestLastEndTime);
+      if (effectiveMode.value === 'create') { // Only update dates if in create mode
+        event.endDate = formatDateForInput(latestLastEndTime.toISOString());
+        console.log('設定された最も遅い終了日:', event.endDate, latestLastEndTime);
+      } else {
+        console.log('終了日 (編集モードでは保持):', originalEndDate);
+        event.endDate = originalEndDate; // Keep original end date in edit mode
+      }
     } else {
       console.warn('有効な終了日は見つかりませんでした。');
+      if (effectiveMode.value === 'edit') event.endDate = originalEndDate; // Ensure original is kept
     }
     
     // Location UID
@@ -312,6 +344,53 @@ async function fetchEventDataFromUrl() { // Renamed from fetchLocationUid and ex
       console.log('取得したMax Participants:', event.maxParticipants);
     } else {
       console.warn('Max Participants は取得できませんでした。');
+    }
+
+    // Estimated Time (所要時間)
+    if (infoDetails.estimatedTime?.[1]) {
+      event.estimatedTime = String(infoDetails.estimatedTime[1]);
+      console.log('取得した所要時間 (estimated_time):', event.estimatedTime);
+    } else {
+      console.warn('所要時間は取得できませんでした。estimatedTime のキーを確認してください。');
+    }
+
+    // Location Name (開催地名) and Location Address (開催地住所)
+    let locationObjectForNameAndAddress = null;
+    if (infoDetails.activeSlotGroups?.[1]?.[0]?.[1]?.location?.[1]) {
+        locationObjectForNameAndAddress = infoDetails.activeSlotGroups[1][0][1].location[1];
+    } else if (infoDetails.visibleLocations?.[1]?.[0]?.[1]) {
+        locationObjectForNameAndAddress = infoDetails.visibleLocations[1][0][1];
+    }
+
+    if (locationObjectForNameAndAddress) {
+        if (locationObjectForNameAndAddress.name?.[1]) {
+            event.locationName = locationObjectForNameAndAddress.name[1];
+            console.log('取得した開催地名:', event.locationName);
+        } else {
+            console.warn('開催地名は location オブジェクトから取得できませんでした。');
+        }
+
+        if (locationObjectForNameAndAddress.address?.[1]) {
+            event.locationAddress = locationObjectForNameAndAddress.address[1];
+            console.log('取得した開催地住所:', event.locationAddress);
+        } else {
+            console.warn('開催地住所は location オブジェクトから取得できませんでした。');
+        }
+    } else {
+        // フォールバックとして infoDetails 直下のキーも試す
+        console.warn('開催地名・住所の元となる location オブジェクトが見つかりませんでした。infoDetails 直下を試します。');
+        if (infoDetails.location_name?.[1]) {
+            event.locationName = infoDetails.location_name[1];
+            console.log('取得した開催地名 (infoDetails.location_name):', event.locationName);
+        } else {
+            console.warn('開催地名は infoDetails.location_name からも取得できませんでした。');
+        }
+        if (infoDetails.location_address?.[1]) {
+            event.locationAddress = infoDetails.location_address[1];
+            console.log('取得した開催地住所 (infoDetails.location_address):', event.locationAddress);
+        } else {
+            console.warn('開催地住所は infoDetails.location_address からも取得できませんでした。');
+        }
     }
 
     if (!event.name && !event.startDate && !event.endDate && !event.locationUid) {
@@ -355,6 +434,10 @@ async function fetchEventDetails() {
         event.endDate = formatDateForInput(foundEvent.endDate);
         event.locationUid = foundEvent.locationUid || '';
         event.maxParticipants = foundEvent.maxParticipants !== undefined ? foundEvent.maxParticipants : null; // 編集時にもmaxParticipantsをセット
+        // Load new fields for edit mode
+        event.estimatedTime = foundEvent.estimated_time || '';
+        event.locationName = foundEvent.location_name || '';
+        event.locationAddress = foundEvent.location_address || '';
       } else {
         errorMessage.value = '編集対象のイベントが見つかりませんでした。';
       }
@@ -385,6 +468,10 @@ async function handleSubmit() {
     endDate: event.endDate,
     locationUid: event.locationUid || null,
     maxParticipants: event.maxParticipants,
+    // Add new fields to payload
+    estimatedTime: event.estimatedTime || null,
+    locationName: event.locationName || null,
+    locationAddress: event.locationAddress || null,
   };
 
   try {
@@ -439,6 +526,10 @@ onMounted(() => {
     event.endDate = '';
     event.locationUid = '';
     event.maxParticipants = null;
+    // Initialize new fields in create mode
+    event.estimatedTime = '';
+    event.locationName = '';
+    event.locationAddress = '';
   }
 });
 
