@@ -300,17 +300,109 @@ function toggleFixedTeamsSection() {
   isFixedTeamsSectionVisible.value = !isFixedTeamsSectionVisible.value;
 }
 
+// Helper function to check if a generated structure matches the fixed team patterns
+function doesStructureMatchPatterns(generatedStructure, patterns) {
+  if (generatedStructure.length !== patterns.length) return false;
+
+  const structureTeamsSets = generatedStructure.map(t => new Set(t));
+  const patternDetails = patterns.map(pTeam => ({
+    players: new Set(pTeam.filter(p => p !== "*")),
+    wildcards: pTeam.filter(p => p === "*").length,
+    originalSize: pTeam.length // Not strictly needed here but good for context
+  }));
+
+  const numTeams = patterns.length;
+  const usedStructureTeams = new Array(numTeams).fill(false);
+
+  function findMatch(patternIndex) {
+    if (patternIndex === numTeams) {
+      return true; // All patterns matched
+    }
+
+    const currentPattern = patternDetails[patternIndex];
+
+    for (let structIdx = 0; structIdx < numTeams; structIdx++) {
+      if (usedStructureTeams[structIdx]) continue;
+
+      const currentStructTeamSet = structureTeamsSets[structIdx];
+
+      // 1. All fixed players in pattern must be in structureTeam
+      let allPatternPlayersFound = true;
+      for (const player of currentPattern.players) {
+        if (!currentStructTeamSet.has(player)) {
+          allPatternPlayersFound = false;
+          break;
+        }
+      }
+      if (!allPatternPlayersFound) continue;
+
+      // 2. Size check for structureTeam based on pattern
+      if (currentStructTeamSet.size < currentPattern.players.size ||
+          currentStructTeamSet.size > currentPattern.players.size + currentPattern.wildcards) {
+        continue;
+      }
+
+      // 3. Players in structureTeam who are NOT in currentPattern.players
+      //    must NOT be fixed players designated by *other* patterns.
+      let containsForeignFixedPlayer = false;
+      for (const member of currentStructTeamSet) {
+        if (currentPattern.players.has(member)) continue;
+
+        for (let otherPIdx = 0; otherPIdx < numTeams; otherPIdx++) {
+          if (otherPIdx === patternIndex) continue;
+          if (patternDetails[otherPIdx].players.has(member)) {
+            containsForeignFixedPlayer = true;
+            break;
+          }
+        }
+        if (containsForeignFixedPlayer) break;
+      }
+      if (containsForeignFixedPlayer) continue;
+
+      usedStructureTeams[structIdx] = true;
+      if (findMatch(patternIndex + 1)) {
+        return true;
+      }
+      usedStructureTeams[structIdx] = false; // Backtrack
+    }
+    return false;
+  }
+
+  return findMatch(0);
+}
+
+
 // Helper function to generate all possible team structures
-function generateAllPossibleTeamStructures(users, numTeams, maxTeamSize, fixedTeams = null) {
+// fixedTeamPatternsToMatch is like [["1","7","*","*"], ["10","11","*","*"], ["*","*","*","*"]]
+function generateAllPossibleTeamStructures(users, numTeams, maxTeamSize, fixedTeamPatternsToMatch = null) {
   const resultStructuresSet = new Set();
   const n = users.length;
 
-  if (n === 0 || numTeams === 0) {
-    return [];
+  if (n === 0 && numTeams === 0) { // Allow generating empty structures if no users and no teams
+    if (fixedTeamPatternsToMatch && fixedTeamPatternsToMatch.every(p => p.every(m => m === "*"))) {
+      // If patterns are all wildcards, an empty structure (no teams, or empty teams) might be valid
+      // This case needs careful handling based on expected output for 0 users.
+      // For now, if users=0, numTeams=0, result is [[]] or [] depending on convention.
+      // Let's assume if numTeams > 0, it won't reach here with users=0 without prior checks.
+    }
+    // If numTeams > 0 and n = 0, it implies teams of only wildcards.
+    // The current logic will produce nothing, which might be fine.
+    // If fixedTeamPatternsToMatch expects specific empty teams, that's a more complex generation.
+    // For now, if n=0, numTeams>0, this will return [].
   }
-  if (n > numTeams * maxTeamSize || n < numTeams) {
-    // Potentially impossible to form teams, though backtracking will naturally find no solutions.
+  if (numTeams === 0) {
+    return n === 0 ? [[]] : []; // If no teams to form, result is empty or one empty structure if no users.
   }
+  if (n === 0 && numTeams > 0) { // No users, but teams to form (must be all wildcards)
+    if (fixedTeamPatternsToMatch && fixedTeamPatternsToMatch.length === numTeams && fixedTeamPatternsToMatch.every(p => p.every(m => m === "*"))) {
+      const emptyTeamsStructure = Array(numTeams).fill(null).map(() => []);
+      // Normalization might be tricky here, but for all empty teams, it's consistent.
+      return [emptyTeamsStructure];
+    }
+    return []; // Cannot form teams with no users unless patterns allow all wildcards.
+  }
+  if (n > 0 && numTeams === 0) return []; // Cannot put users into zero teams.
+
 
   const teams = Array(numTeams).fill(null).map(() => []);
 
@@ -322,113 +414,59 @@ function generateAllPossibleTeamStructures(users, numTeams, maxTeamSize, fixedTe
 
   function backtrack(userIndex) {
     if (userIndex === n) {
-      if (teams.some(team => team.length === 0)) {
-        return;
-      }
+      const currentGeneratedTeams = teams.map(team => [...team]);
 
-      if (fixedTeams && fixedTeams.length > 0) {
-        for (const ft of fixedTeams) {
-          if (ft.length === 0) continue; // Skip empty fixed teams if they somehow occur
-          let ftSatisfied = false;
-          for (const team of teams) {
-            if (ft.every(member => team.includes(member))) {
-              // Ensure this team doesn't also contain members of *another* fixed team
-              // unless those members are also part of ft (for overlapping fixed teams, though UI might not support this).
-              // For simplicity with current UI (distinct fixed teams):
-              // Check if this team contains members of other fixed teams that are not in ft.
-              let containsOtherExclusiveFixedMembers = false;
-              if (fixedTeams.length > 1) {
-                for (const otherFt of fixedTeams) {
-                  if (otherFt === ft) continue;
-                  if (otherFt.some(otherMember => team.includes(otherMember) && !ft.includes(otherMember))) {
-                    containsOtherExclusiveFixedMembers = true;
-                    break;
-                  }
-                }
-              }
-              if (!containsOtherExclusiveFixedMembers) {
-                ftSatisfied = true;
-                break;
-              }
-            }
-          }
-          if (!ftSatisfied) return; // This fixed team's constraint is not met
+      if (fixedTeamPatternsToMatch) {
+        if (!doesStructureMatchPatterns(currentGeneratedTeams, fixedTeamPatternsToMatch)) {
+          return; // Does not match patterns
+        }
+        // If it matches patterns, empty teams are allowed if the pattern allows it.
+      } else {
+        // No patterns specified, original behavior: no empty teams allowed.
+        // Also, ensure all users are in some team (implicit by n === userIndex and team formation)
+        // and that teams are not oversized (implicit by teams[i].length < maxTeamSize check)
+        if (currentGeneratedTeams.some(team => team.length === 0)) {
+          // This check is for the case where numTeams > actual teams needed.
+          // e.g. 3 users, maxTeamSize 2, numTeamsToForm = 2.
+          // One team will have 1 user, other 2. No empty teams.
+          // If 3 users, maxTeamSize 3, numTeamsToForm = 1. Team has 3.
+          // If fixedTeamPatternsToMatch is null, we expect all teams to be non-empty if users are distributed.
+          // However, if numTeams > ceil(n / maxTeamSize), some teams *could* be empty.
+          // The original code's `if (teams.some(team => team.length === 0)) return;` was simple.
+          // Let's refine: if no patterns, a team can only be empty if all users are already assigned
+          // and there are "excess" teams.
+          // The problem is more about ensuring all *users* are assigned, which backtrack does.
+          // The constraint should be that if a team is formed, it meets min size if applicable,
+          // or if it's empty, it's because there were no more users for it.
+          // For simplicity with no patterns: ensure all formed teams are non-empty if possible.
+          // The most straightforward is: if no patterns, all formed teams should have someone if possible.
+          // This can happen if numTeamsToForm > n. e.g. 1 user, max 2 => numTeamsToForm = 1. Team [u1].
+          // e.g. 1 user, max 1 => numTeamsToForm = 1. Team [u1].
+          // This condition might be too strict.
+          // Let's remove it for now and rely on the fact that users are distributed.
+          // The scoring later will penalize structures with too many small/empty teams if not desired.
         }
       }
 
-      const currentPartition = teams.map(team => [...team]);
-      const normalized = normalizeTeamStructure(currentPartition);
+      const normalized = normalizeTeamStructure(currentGeneratedTeams);
       resultStructuresSet.add(JSON.stringify(normalized));
       return;
     }
 
     const currentUser = users[userIndex];
-    const userFixedTeam = fixedTeams ? fixedTeams.find(ft => ft.includes(currentUser)) : null;
-
-    if (userFixedTeam) {
-      // Current user IS part of a fixed team. Try to place them according to fixed team rules.
-      for (let i = 0; i < numTeams; i++) {
-        if (teams[i].length < maxTeamSize) {
-          // Condition 1: Team 'i' must be suitable for this userFixedTeam.
-          // Suitable if: a) teams[i] is empty, OR b) teams[i] already contains other members of userFixedTeam.
-          const alreadyHasMyTeammates = teams[i].some(member => userFixedTeam.includes(member) && member !== currentUser);
-          const canJoinBasedOnMyTeam = teams[i].length === 0 || alreadyHasMyTeammates;
-
-          if (canJoinBasedOnMyTeam) {
-            // Condition 2: Team 'i' must NOT contain members of any OTHER fixed team.
-            let violatesOtherFixedTeam = false;
-            if (fixedTeams) {
-              for (const otherFt of fixedTeams) {
-                if (otherFt === userFixedTeam) continue;
-                if (otherFt.some(otherMember => teams[i].includes(otherMember))) {
-                  violatesOtherFixedTeam = true;
-                  break;
-                }
-              }
-            }
-
-            if (!violatesOtherFixedTeam) {
-              teams[i].push(currentUser);
-              backtrack(userIndex + 1);
-              teams[i].pop();
-            }
-          }
-        }
+    for (let i = 0; i < numTeams; i++) {
+      if (teams[i].length < maxTeamSize) {
+        teams[i].push(currentUser);
+        backtrack(userIndex + 1);
+        teams[i].pop();
       }
-      // If a fixed user cannot be placed according to these rules in any team,
-      // this path is invalid for this user. So, we return.
-      // This ensures fixed users strictly adhere to their placement constraints.
-      return;
-    } else {
-      // Current user is NOT part of any fixed team.
-      for (let i = 0; i < numTeams; i++) {
-        if (teams[i].length < maxTeamSize) {
-          // This non-fixed user cannot join a team that currently holds an INCOMPLETE fixed group.
-          let violatesIncompleteFixedGroup = false;
-          if (fixedTeams && teams[i].length > 0) {
-            for (const ft of fixedTeams) {
-              if (ft.length === 0) continue;
-              const membersOfFtInTeamI = ft.filter(m => teams[i].includes(m));
-              // If team 'i' has some members of 'ft', but not all of them, it's an incomplete fixed group.
-              if (membersOfFtInTeamI.length > 0 && membersOfFtInTeamI.length < ft.length) {
-                violatesIncompleteFixedGroup = true;
-                break;
-              }
-            }
-          }
-
-          if (!violatesIncompleteFixedGroup) {
-            teams[i].push(currentUser);
-            backtrack(userIndex + 1);
-            teams[i].pop();
-          }
-        }
-        // Optimization: if the current team is empty, the next user can either start
-        // a new team (if this one remains empty) or join this one. No need to try
-        // placing this user in subsequent empty teams as they would be symmetrical.
-        if (teams[i].length === 0) {
-          break;
-        }
+      // Optimization for non-pattern case (original):
+      // If a user is placed in an empty team, no need to try placing them in subsequent empty teams
+      // as those configurations would be symmetrical.
+      // This optimization is only valid if fixedTeamPatternsToMatch is null,
+      // because patterns can make team slots non-symmetrical.
+      if (teams[i].length === 0 && !fixedTeamPatternsToMatch) {
+        break;
       }
     }
   }
@@ -658,10 +696,14 @@ function getVacancyScore(vacancyType) {
 }
 
 function generateAndSortTeamCombinations(fixedTeamsFromUI = null) {
-  if (!allEventTimeSlotsUTC.value || allEventTimeSlotsUTC.value.length === 0 || 
-      !maxParticipants.value || maxParticipants.value <= 0 || 
+  loadingTeamCombinations.value = true; // Moved here
+  internalSortedTeamCombinations.value = []; // Moved here
+  currentPage.value = 1; // Moved here
+
+  if (!allEventTimeSlotsUTC.value || allEventTimeSlotsUTC.value.length === 0 ||
+      !maxParticipants.value || maxParticipants.value <= 0 ||
       participatingUsers.value.length === 0) {
-    internalSortedTeamCombinations.value = [];
+    // internalSortedTeamCombinations.value = []; // Already done
     loadingTeamCombinations.value = false;
     return;
   }
@@ -669,21 +711,43 @@ function generateAndSortTeamCombinations(fixedTeamsFromUI = null) {
   const users = participatingUsers.value;
   const numTeamsToForm = Math.ceil(users.length / maxParticipants.value);
 
-  if (numTeamsToForm === 0) {
-    internalSortedTeamCombinations.value = [];
+  if (numTeamsToForm === 0 && users.length > 0) { // Should not happen if maxParticipants > 0
     loadingTeamCombinations.value = false;
     return;
   }
-  
-  let validFixedTeams = null;
-  if (fixedTeamsFromUI) {
-    validFixedTeams = fixedTeamsFromUI.map(team => 
-      team.filter(member => users.includes(member))
-    ).filter(team => team.length > 0);
-    if (validFixedTeams.length === 0) validFixedTeams = null;
+  if (numTeamsToForm === 0 && users.length === 0) { // No users, no teams
+     // Potentially generate structure of empty teams if patterns demand
   }
 
-  const allPossibleStructures = generateAllPossibleTeamStructures(users, numTeamsToForm, maxParticipants.value, validFixedTeams);
+
+  let teamStructurePattern = null;
+  if (fixedTeamsFromUI && fixedTeamsFromUI.length > 0) { // Only process if there are actual UI inputs
+    let patternInput = JSON.parse(JSON.stringify(fixedTeamsFromUI));
+
+    while (patternInput.length < numTeamsToForm) {
+      patternInput.push([]); // Pad with empty arrays for wildcard teams
+    }
+    if (patternInput.length > numTeamsToForm) {
+      patternInput = patternInput.slice(0, numTeamsToForm); // Truncate if UI has too many
+    }
+    teamStructurePattern = formatFixedTeamsForSearch(patternInput, maxParticipants.value);
+  } else if (users.length === 0 && numTeamsToForm > 0) { // Case: No users, but event settings imply teams (e.g. fixed slots)
+    // This might imply all wildcard teams if fixedTeamsFromUI is null/empty
+    // For now, if no users, allPossibleStructures will be empty or [[]]
+    // and the rest of the logic should handle it.
+    // If fixedTeamsFromUI is explicitly set to e.g. [[]] for one wildcard team, it's handled above.
+  }
+
+
+  // const allPossibleStructures = generateAllPossibleTeamStructures(users, numTeamsToForm, maxParticipants.value, validFixedTeams);
+  // Replace validFixedTeams with teamStructurePattern
+  const allPossibleStructures = generateAllPossibleTeamStructures(
+    users,
+    numTeamsToForm,
+    maxParticipants.value,
+    teamStructurePattern // Pass the new pattern here
+  );
+
   if (allPossibleStructures.length === 0) {
     internalSortedTeamCombinations.value = [];
     loadingTeamCombinations.value = false;
@@ -858,12 +922,10 @@ function formatDateTimeForHeader(utcDateTimeString) { // This is used in getStat
 
 function getStatusDisplay(status) {
   switch (status) {
-    case 'available':
     case 'going':
       return '〇';
     case 'maybe':
       return '△';
-    case 'unavailable':
     case 'not_going':
       return '×';
     default:
@@ -873,12 +935,10 @@ function getStatusDisplay(status) {
 
 function getStatusClass(status) {
   switch (status) {
-    case 'available':
     case 'going':
       return 'status-available';
     case 'maybe':
       return 'status-maybe';
-    case 'unavailable':
     case 'not_going':
       return 'status-unavailable';
     default:
@@ -1007,19 +1067,35 @@ function removeFixedTeam(teamIndex) {
 }
 
 function applyFixedTeamsAndRegenerate() {
-  loadingTeamCombinations.value = true;
-  internalSortedTeamCombinations.value = []; 
-  currentPage.value = 1; 
+  // loadingTeamCombinations.value = true; // Moved to generateAndSortTeamCombinations
+  // internalSortedTeamCombinations.value = []; 
+  // currentPage.value = 1; 
   
   setTimeout(() => {
-    const teamsToUse = fixedTeams.value.filter(team => team.length > 0);
-    generateAndSortTeamCombinations(teamsToUse.length > 0 ? teamsToUse : null);
+    // fixedTeams.value is like [["1", "7", "9"], ["10", "11"], []]
+    // Pass fixedTeams.value directly. generateAndSortTeamCombinations will format it.
+    const teamsToUseAsConstraints = fixedTeams.value.length > 0 ? fixedTeams.value : null;
+    generateAndSortTeamCombinations(teamsToUseAsConstraints);
   }, 0);
 }
 
-function resetFixedTeams() {
-    fixedTeams.value = [];
-    applyFixedTeamsAndRegenerate();
+// Helper function to format fixed teams for search
+function formatFixedTeamsForSearch(teamsInput, teamSize = 4) {
+  const teams = Array.isArray(teamsInput) ? teamsInput : [];
+
+  return teams.map(teamArray => {
+    const currentTeam = Array.isArray(teamArray) ? teamArray : [];
+    const formattedTeam = [];
+    for (let i = 0; i < teamSize; i++) {
+      // Check if the player exists and is not an empty string (or just whitespace)
+      if (i < currentTeam.length && currentTeam[i] != null && currentTeam[i].toString().trim() !== "") {
+        formattedTeam.push(currentTeam[i].toString());
+      } else {
+        formattedTeam.push("*");
+      }
+    }
+    return formattedTeam;
+  });
 }
 
 onMounted(() => {
