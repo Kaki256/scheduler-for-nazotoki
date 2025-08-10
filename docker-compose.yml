@@ -1,0 +1,51 @@
+version: '3.8'
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend:/usr/src/app
+      - /usr/src/app/node_modules
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=development
+      - NS_MARIADB_HOSTNAME=db
+      - NS_MARIADB_USER=${NS_MARIADB_USER?Variable not set}
+      - NS_MARIADB_PASSWORD=${NS_MARIADB_PASSWORD?Variable not set}
+      - NS_MARIADB_DATABASE=${NS_MARIADB_DATABASE?Variable not set}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID?Variable not set}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET?Variable not set}
+    depends_on:
+      - db
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/usr/src/app
+      - /usr/src/app/node_modules
+    environment:
+      - VITE_API_BASE_URL=http://localhost:3001/api
+
+  db:
+    image: mariadb:10.5
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD?Variable not set}
+      - MYSQL_DATABASE=${NS_MARIADB_DATABASE?Variable not set}
+      - MYSQL_USER=${NS_MARIADB_USER?Variable not set}
+      - MYSQL_PASSWORD=${NS_MARIADB_PASSWORD?Variable not set}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - "8080:8080"
+
+volumes:
+  mariadb_data:

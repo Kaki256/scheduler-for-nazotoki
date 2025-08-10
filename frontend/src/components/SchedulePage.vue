@@ -66,19 +66,6 @@
     <div v-if="!loading && initialLoadDone && Object.keys(schedule).length > 0" class="schedule-display-section">
       <h2 class="section-title">開催日時・参加ステータス</h2>
 
-      <!-- Weekday bulk actions (remains at the top) -->
-      <!-- <div class="weekday-bulk-actions-container">
-        <h3 class="bulk-actions-title">曜日ごとに詳細一括変更:</h3>
-        <div v-for="(dayLabel, dayIndex) in weekdayLabels" :key="dayIndex" class="weekday-bulk-item">
-          <div class="weekday-bulk-header">
-            <span class="weekday-label">{{ dayLabel }}:</span>
-            <button @click="openWeekdayBulkModal(dayIndex)" class="button small-button">
-              詳細設定
-            </button>
-          </div>
-        </div>
-      </div> -->
-
       <!-- Calendar View -->
       <div class="calendar-view-container">
         <div v-for="monthData in calendarMonths" :key="monthData.key" class="calendar-month">
@@ -125,7 +112,6 @@
                   :aria-label="day.isClickable ? `${day.dateString} のスロットを表示` : (day.empty ? '空セル' : `${day.dateString} は選択不可`)"
                 >
                   <div v-if="!day.empty" class="day-number" :style="{ fontSize: '1em' }">{{ day.date }}</div>
-                  <!-- Removed slot-indicator as background now shows status -->
                 </td>
               </tr>
             </tbody>
@@ -140,106 +126,53 @@
           <button class="modal-close-button" @click="closeModal" aria-label="閉じる">&times;</button>
           <h3 :id="modalTitleId" class="modal-title">{{ modalTitleComputed }}</h3>
           
-          <!-- Content for Date Specific Modal -->
-          <div v-if="modalMode === 'date'">
-            <div class="date-bulk-actions modal-bulk-actions">
-              <button 
-                @click="setBulkStatusForDate(selectedDateForModal, 'going')" 
-                :class="['button', 'bulk-action-button', 'bulk-going', { 'active': dateActiveBulkStatus[selectedDateForModal] === 'going' }]">
-                全部行ける
-              </button>
-              <button 
-                @click="setBulkStatusForDate(selectedDateForModal, 'maybe')" 
-                :class="['button', 'bulk-action-button', 'bulk-maybe', { 'active': dateActiveBulkStatus[selectedDateForModal] === 'maybe' }]">
-                全部微妙
-              </button>
-              <button 
-                @click="setBulkStatusForDate(selectedDateForModal, 'not_going')" 
-                :class="['button', 'bulk-action-button', 'bulk-not-going', { 'active': dateActiveBulkStatus[selectedDateForModal] === 'not_going' }]">
-                全部行けない
-              </button>
+          <div v-if="modalMode === 'date'" class="date-modal-layout">
+            <div class="event-slots-container">
+              <div class="date-bulk-actions modal-bulk-actions">
+                <button @click="setBulkStatusForDate(selectedDateForModal, 'going')" :class="['button', 'bulk-action-button', 'bulk-going', { 'active': dateActiveBulkStatus[selectedDateForModal] === 'going' }]">全部行ける</button>
+                <button @click="setBulkStatusForDate(selectedDateForModal, 'maybe')" :class="['button', 'bulk-action-button', 'bulk-maybe', { 'active': dateActiveBulkStatus[selectedDateForModal] === 'maybe' }]">全部微妙</button>
+                <button @click="setBulkStatusForDate(selectedDateForModal, 'not_going')" :class="['button', 'bulk-action-button', 'bulk-not-going', { 'active': dateActiveBulkStatus[selectedDateForModal] === 'not_going' }]">全部行けない</button>
+              </div>
+              <ul v-if="slotsForModal.length > 0" class="slot-list modal-slot-list">
+                <li v-for="slot in slotsForModal" :key="slot.originalStartTimeUTC" class="slot-item">
+                  <div class="slot-info">
+                    <span class="slot-time">{{ formatSlotTimeRange(slot.originalStartTimeUTC, parsedEstimatedTimeMinutes) }}</span>
+                    <span v-if="slot.status" :class="['slot-availability', getSlotStatusClass(slot.status)]">{{ formatSlotStatus(slot.status) }}</span>
+                  </div>
+                  <div v-if="!isSlotSoldOut(slot.originalStartTimeUTC)" class="user-status-selector clickable" :class="getUserSlotClass(userSelection[slot.originalStartTimeUTC])" @click="toggleSlotStatus(slot.originalStartTimeUTC)" role="button" tabindex="0" @keydown.enter="toggleSlotStatus(slot.originalStartTimeUTC)" @keydown.space.prevent="toggleSlotStatus(slot.originalStartTimeUTC)" :aria-label="`スロット ${formatSlotTimeRange(slot.originalStartTimeUTC, parsedEstimatedTimeMinutes)} のあなたのステータス: ${formatUserSelectionStatus(userSelection[slot.originalStartTimeUTC])}。クリックまたはEnter/Spaceで変更`">{{ formatUserSelectionStatus(userSelection[slot.originalStartTimeUTC]) }}</div>
+                  <div v-else class="user-status-selector disabled-slot" :aria-label="`スロット ${formatSlotTimeRange(slot.originalStartTimeUTC, parsedEstimatedTimeMinutes)} は満席です。あなたのステータス: ${formatUserSelectionStatus(userSelection[slot.originalStartTimeUTC])}`" aria-disabled="true">{{ formatUserSelectionStatus(userSelection[slot.originalStartTimeUTC]) }}</div>
+                </li>
+              </ul>
+              <p v-else class="no-events-message modal-no-events">この日の開催情報はありません。</p>
             </div>
-
-            <ul v-if="slotsForModal.length > 0" class="slot-list modal-slot-list">
-              <li v-for="slot in slotsForModal" :key="slot.originalStartTimeUTC" class="slot-item">
-                <div class="slot-info">
-                  <span class="slot-time">{{ formatSlotTimeRange(slot.originalStartTimeUTC, parsedEstimatedTimeMinutes) }}</span>
-                  <span v-if="slot.status" :class="['slot-availability', getSlotStatusClass(slot.status)]">
-                    {{ formatSlotStatus(slot.status) }}
-                  </span>
-                </div>
-                <div
-                  v-if="!isSlotSoldOut(slot.originalStartTimeUTC)" 
-                  class="user-status-selector clickable"
-                  :class="getUserSlotClass(userSelection[slot.originalStartTimeUTC])"
-                  @click="toggleSlotStatus(slot.originalStartTimeUTC)"
-                  role="button"
-                  tabindex="0"
-                  @keydown.enter="toggleSlotStatus(slot.originalStartTimeUTC)"
-                  @keydown.space.prevent="toggleSlotStatus(slot.originalStartTimeUTC)"
-                  :aria-label="`スロット ${formatSlotTimeRange(slot.originalStartTimeUTC, parsedEstimatedTimeMinutes)} のあなたのステータス: ${formatUserSelectionStatus(userSelection[slot.originalStartTimeUTC])}。クリックまたはEnter/Spaceで変更`"
-                >
-                  {{ formatUserSelectionStatus(userSelection[slot.originalStartTimeUTC]) }}
-                </div>
-                <div
-                  v-else
-                  class="user-status-selector disabled-slot"
-                  :aria-label="`スロット ${formatSlotTimeRange(slot.originalStartTimeUTC, parsedEstimatedTimeMinutes)} は満席です。あなたのステータス: ${formatUserSelectionStatus(userSelection[slot.originalStartTimeUTC])}`"
-                  aria-disabled="true"
-                >
-                  {{ formatUserSelectionStatus(userSelection[slot.originalStartTimeUTC]) }} 
-                </div>
-              </li>
-            </ul>
-            <p v-else class="no-events-message modal-no-events">この日の開催情報はありません。</p>
+            <div class="personal-calendar-container">
+              <h4 class="personal-calendar-title">マイカレンダーの予定</h4>
+              <ul v-if="personalScheduleForSelectedDate.length > 0" class="personal-schedule-list">
+                <li v-for="event in personalScheduleForSelectedDate" :key="event.id" class="personal-schedule-item">
+                  <strong class="personal-schedule-title">{{ event.title }}</strong>
+                  <span class="personal-schedule-time">{{ formatPersonalEventTime(event.start_datetime) }} - {{ formatPersonalEventTime(event.end_datetime) }}</span>
+                </li>
+              </ul>
+              <p v-else class="no-events-message">この日の予定はありません。</p>
+            </div>
           </div>
 
-          <!-- Content for Weekday Bulk Modal -->
           <div v-if="modalMode === 'weekdayBulk'">
             <div v-if="selectedWeekdayForBulkModal !== null && getRepresentativeSlotsForDay(selectedWeekdayForBulkModal).length > 0" class="weekday-bulk-details-modal">
               <div class="weekday-overall-bulk-actions modal-bulk-actions">
-                <button 
-                  @click="setOverallBulkStatusForWeekday(selectedWeekdayForBulkModal, 'going')" 
-                  :class="['button', 'bulk-action-button', 'bulk-going', { 'active': weekdayOverallActiveBulkStatus[selectedWeekdayForBulkModal] === 'going' }]">
-                  全部行ける
-                </button>
-                <button 
-                  @click="setOverallBulkStatusForWeekday(selectedWeekdayForBulkModal, 'maybe')" 
-                  :class="['button', 'bulk-action-button', 'bulk-maybe', { 'active': weekdayOverallActiveBulkStatus[selectedWeekdayForBulkModal] === 'maybe' }]">
-                  全部微妙
-                </button>
-                <button 
-                  @click="setOverallBulkStatusForWeekday(selectedWeekdayForBulkModal, 'not_going')" 
-                  :class="['button', 'bulk-action-button', 'bulk-not-going', { 'active': weekdayOverallActiveBulkStatus[selectedWeekdayForBulkModal] === 'not_going' }]">
-                  全部行けない
-                </button>
+                <button @click="setOverallBulkStatusForWeekday(selectedWeekdayForBulkModal, 'going')" :class="['button', 'bulk-action-button', 'bulk-going', { 'active': weekdayOverallActiveBulkStatus[selectedWeekdayForBulkModal] === 'going' }]">全部行ける</button>
+                <button @click="setOverallBulkStatusForWeekday(selectedWeekdayForBulkModal, 'maybe')" :class="['button', 'bulk-action-button', 'bulk-maybe', { 'active': weekdayOverallActiveBulkStatus[selectedWeekdayForBulkModal] === 'maybe' }]">全部微妙</button>
+                <button @click="setOverallBulkStatusForWeekday(selectedWeekdayForBulkModal, 'not_going')" :class="['button', 'bulk-action-button', 'bulk-not-going', { 'active': weekdayOverallActiveBulkStatus[selectedWeekdayForBulkModal] === 'not_going' }]">全部行けない</button>
               </div>
-
               <ul class="slot-list modal-slot-list">
                 <li v-for="slotRep in getRepresentativeSlotsForDay(selectedWeekdayForBulkModal)" :key="slotRep.originalStartTimeUTC" class="slot-item">
                   <div class="slot-info">
                     <span class="slot-time">{{ formatSlotTimeRange(slotRep.originalStartTimeUTC, parsedEstimatedTimeMinutes) }}</span>
-                    <!-- 曜日一括設定では元々のスロットの空き状況 (slot.status) は表示しない -->
                   </div>
-                  <div
-                    class="user-status-selector clickable"
-                    :class="getUserSlotClass(bulkWeekdaySlotSelections[selectedWeekdayForBulkModal]?.[slotRep.timeHHMM])"
-                    @click="toggleBulkSlotStatus(selectedWeekdayForBulkModal, slotRep.timeHHMM)"
-                    role="button" 
-                    tabindex="0"
-                    @keydown.enter="toggleBulkSlotStatus(selectedWeekdayForBulkModal, slotRep.timeHHMM)"
-                    @keydown.space.prevent="toggleBulkSlotStatus(selectedWeekdayForBulkModal, slotRep.timeHHMM)"
-                    :aria-label="`曜日 ${weekdayLabels[selectedWeekdayForBulkModal]}, 時刻 ${slotRep.timeHHMM} (${formatSlotTimeRange(slotRep.originalStartTimeUTC, parsedEstimatedTimeMinutes)}) の一括設定ステータス: ${formatUserSelectionStatus(bulkWeekdaySlotSelections[selectedWeekdayForBulkModal]?.[slotRep.timeHHMM])}。クリックまたはEnter/Spaceで変更`"
-                  >
-                    {{ formatUserSelectionStatus(bulkWeekdaySlotSelections[selectedWeekdayForBulkModal]?.[slotRep.timeHHMM]) }}
-                  </div>
+                  <div class="user-status-selector clickable" :class="getUserSlotClass(bulkWeekdaySlotSelections[selectedWeekdayForBulkModal]?.[slotRep.timeHHMM])" @click="toggleBulkSlotStatus(selectedWeekdayForBulkModal, slotRep.timeHHMM)" role="button" tabindex="0" @keydown.enter="toggleBulkSlotStatus(selectedWeekdayForBulkModal, slotRep.timeHHMM)" @keydown.space.prevent="toggleBulkSlotStatus(selectedWeekdayForBulkModal, slotRep.timeHHMM)" :aria-label="`曜日 ${weekdayLabels[selectedWeekdayForBulkModal]}, 時刻 ${slotRep.timeHHMM} (${formatSlotTimeRange(slotRep.originalStartTimeUTC, parsedEstimatedTimeMinutes)}) の一括設定ステータス: ${formatUserSelectionStatus(bulkWeekdaySlotSelections[selectedWeekdayForBulkModal]?.[slotRep.timeHHMM])}。クリックまたはEnter/Spaceで変更`">{{ formatUserSelectionStatus(bulkWeekdaySlotSelections[selectedWeekdayForBulkModal]?.[slotRep.timeHHMM]) }}</div>
                 </li>
               </ul>
-              <button 
-                @click="applyBulkWeekdaySelections(selectedWeekdayForBulkModal)" 
-                class="button primary-button apply-bulk-weekday-button modal-apply-button">
-                {{ weekdayLabels[selectedWeekdayForBulkModal] }}曜日の設定を全週に適用
-              </button>
+              <button @click="applyBulkWeekdaySelections(selectedWeekdayForBulkModal)" class="button primary-button apply-bulk-weekday-button modal-apply-button">{{ weekdayLabels[selectedWeekdayForBulkModal] }}曜日の設定を全週に適用</button>
             </div>
             <p v-else-if="selectedWeekdayForBulkModal !== null" class="no-representative-slots-message modal-no-events">この曜日の代表的なスロットパターンが見つかりません。</p>
             <p v-else class="modal-no-events">曜日が選択されていません。</p>
@@ -274,25 +207,25 @@
 
 <script setup>
 import { computed, ref, reactive, watch, onMounted, nextTick, onUnmounted } from 'vue';
-import { useRoute, useRouter } from 'vue-router'; // useRouter をインポート
-import axios from 'axios'; // axios をインポート
+import { useRoute, useRouter } from 'vue-router';
+import axios from 'axios';
 
 const route = useRoute();
-const router = useRouter(); // router インスタンスを取得
+const router = useRouter();
 
 const props = defineProps({
   orgSlug: { type: String, required: true },
   eventSlug: { type: String, required: true }
 });
 
+const allPersonalSchedules = ref([]);
 const eventDisplayNameRef = ref('');
 const eventUrlRef = ref('');
 const locationUidRef = ref('');
-const estimatedTimeRef = ref(''); // 追加
-const locationAddressRef = ref(''); // 開催地住所を格納
+const estimatedTimeRef = ref('');
+const locationAddressRef = ref('');
 
 const formatDateForInput = (date) => date.toISOString().split('T')[0];
-const todayForDefaults = new Date();
 
 const currentStartDate = ref('');
 const currentEndDate = ref('');
@@ -304,47 +237,52 @@ const formattedRecruitmentPeriod = computed(() => {
   return `${startDate.toLocaleDateString('ja-JP')} - ${endDate.toLocaleDateString('ja-JP')}`;
 });
 
+const personalScheduleForSelectedDate = computed(() => {
+  if (!selectedDateForModal.value || allPersonalSchedules.value.length === 0) {
+    return [];
+  }
+  const selectedDate = new Date(selectedDateForModal.value + 'T00:00:00Z');
+  const selectedDateEnd = new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000);
+
+  return allPersonalSchedules.value.filter(event => {
+    const eventStart = new Date(event.start_datetime);
+    const eventEnd = new Date(event.end_datetime);
+    return eventStart < selectedDateEnd && eventEnd > selectedDate;
+  }).sort((a, b) => new Date(a.start_datetime) - new Date(b.start_datetime));
+});
+
 const parsedEstimatedTimeMinutes = computed(() => {
   if (!estimatedTimeRef.value) return 0;
   const timeStr = String(estimatedTimeRef.value).trim();
-
-  // 文字列からすべての数値を抽出
   const numbers = (timeStr.match(/\d+/g) || []).map(Number);
-  console.log("抽出された数値:", numbers);
-
-  if (numbers.length === 0) {
-    return 0;
-  }
-
-  // 抽出された数値の中で最大のものを所要時間とする
+  if (numbers.length === 0) return 0;
   const maxMinutes = Math.max(...numbers);
-
   return maxMinutes > 0 ? maxMinutes : 0;
 });
 
 function formatSlotTimeRange(startTimeUTC, durationMinutes) {
   if (!startTimeUTC) return "時刻不明";
-  
   try {
     const startDate = new Date(startTimeUTC);
     const startTimeFormatted = startDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
-
-    if (durationMinutes <= 0) {
-      return startTimeFormatted; // 所要時間がない場合は開始時刻のみ
-    }
-
+    if (durationMinutes <= 0) return startTimeFormatted;
     const endDate = new Date(startDate.getTime() + durationMinutes * 60000);
     const endTimeFormatted = endDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
-
     return `${startTimeFormatted}～${endTimeFormatted}`;
   } catch (e) {
     console.error("Error formatting slot time range:", startTimeUTC, durationMinutes, e);
     try {
-        // Fallback to just start time if range formatting fails
-        return new Date(startTimeUTC).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
-    } catch {
-        return "時刻エラー";
-    }
+      return new Date(startTimeUTC).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
+    } catch { return "時刻エラー"; }
+  }
+}
+
+function formatPersonalEventTime(datetime) {
+  if (!datetime) return '';
+  try {
+    return new Date(datetime).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
+  } catch (e) {
+    return '時刻エラー';
   }
 }
 
@@ -352,72 +290,46 @@ const schedule = ref({});
 const loading = ref(false);
 const initialLoadDone = ref(false);
 const errorMessage = ref('');
-
 const userSelection = reactive({});
 const savingSelections = ref(false);
 const saveMessage = ref({ text: '', type: '' });
-
-const dateActiveBulkStatus = reactive({}); // { [date]: 'going' | 'maybe' | 'not_going' | null }
-const weekdayActiveBulkStatus = reactive({}); // { [dayIndex]: 'going' | 'maybe' | 'not_going' | null }
-const weekdayOverallActiveBulkStatus = reactive({}); // { [dayIndex]: 'going' | 'maybe' | 'not_going' | null }
-
-// モーダル状態管理の統合
-const isModalOpen = ref(false); // 共通のモーダル表示状態
-const modalMode = ref(''); // 'date' または 'weekdayBulk'
-const selectedDateForModal = ref(null); // YYYY-MM-DD
-const selectedWeekdayForBulkModal = ref(null); // 現在編集中の曜日のインデックス (0-6)
-// const isWeekdayBulkModalOpen = ref(false); // 削除
-
-const bulkWeekdaySlotSelections = reactive({}); // { dayIndex: { "HH:MM": "status", ... }, ... }
+const dateActiveBulkStatus = reactive({});
+const weekdayActiveBulkStatus = reactive({});
+const weekdayOverallActiveBulkStatus = reactive({});
+const isModalOpen = ref(false);
+const modalMode = ref('');
+const selectedDateForModal = ref(null);
+const selectedWeekdayForBulkModal = ref(null);
+const bulkWeekdaySlotSelections = reactive({});
 
 const weekdayRepresentativeSlots = computed(() => {
-  const result = {}; // { 0: ["HH:MM", ...], 1: ["HH:MM", ...], ... }
+  const result = {};
   if (!schedule.value || Object.keys(schedule.value).length === 0) {
     for (let i = 0; i < 7; i++) result[i] = [];
     return result;
   }
-
   const foundWeekdays = new Set();
-
-  // sortedSchedule.value を使って日付順に処理
   for (const dateKey of Object.keys(sortedSchedule.value)) {
-    if (foundWeekdays.size === 7) break; // 全曜日の代表を見つけたら終了
-
-    const dateObj = new Date(dateKey + 'T00:00:00Z'); // UTCとして解釈
+    if (foundWeekdays.size === 7) break;
+    const dateObj = new Date(dateKey + 'T00:00:00Z');
     const dayIndex = dateObj.getUTCDay();
-
     if (!foundWeekdays.has(dayIndex)) {
       const slotsForDate = schedule.value[dateKey];
       if (slotsForDate && slotsForDate.length > 0) {
-        result[dayIndex] = slotsForDate
-          .map(slot => {
-            try {
-              return {
-                timeHHMM: new Date(slot.originalStartTimeUTC).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' }),
-                originalStartTimeUTC: slot.originalStartTimeUTC
-              };
-            } catch (e) {
-              console.error("Error processing slot for representative: ", slot.originalStartTimeUTC, e);
-              return null;
-            }
-          })
-          .filter(s => s !== null)
-          .sort((a, b) => a.timeHHMM.localeCompare(b.timeHHMM));
+        result[dayIndex] = slotsForDate.map(slot => ({
+          timeHHMM: new Date(slot.originalStartTimeUTC).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' }),
+          originalStartTimeUTC: slot.originalStartTimeUTC
+        })).filter(s => s !== null).sort((a, b) => a.timeHHMM.localeCompare(b.timeHHMM));
         foundWeekdays.add(dayIndex);
       }
     }
   }
-
-  // まだ代表スロットが見つかっていない曜日があれば空リストで初期化
   for (let i = 0; i < 7; i++) {
-    if (!result[i]) { 
-      result[i] = [];
-    }
+    if (!result[i]) result[i] = [];
   }
   return result;
 });
 
-// 統合されたモーダルタイトル
 const modalTitleId = 'unifiedModalTitle';
 const modalTitleComputed = computed(() => {
   if (modalMode.value === 'date' && selectedDateForModal.value) {
@@ -435,25 +347,19 @@ const modalTitleComputed = computed(() => {
   } else if (modalMode.value === 'weekdayBulk' && selectedWeekdayForBulkModal.value !== null) {
     return `${weekdayLabels[selectedWeekdayForBulkModal.value]}曜日の一括設定`;
   }
-  return '詳細設定'; // デフォルトタイトル
+  return '詳細設定';
 });
 
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
-
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
 const weekdayLabels = ['日', '月', '火', '水', '木', '金', '土'];
-
-// ステータスの循環順序
 const possibleStatuses = ['going', 'maybe', 'not_going', undefined];
 
 const sortedSchedule = computed(() => {
   if (!schedule.value || typeof schedule.value !== 'object') return {};
-  return Object.entries(schedule.value)
-    .sort(([dateA], [dateB]) => new Date(dateA) - new Date(dateB))
-    .reduce((obj, [key, value]) => {
-      obj[key] = value;
-      return obj;
-    }, {});
+  return Object.entries(schedule.value).sort(([dateA], [dateB]) => new Date(dateA) - new Date(dateB)).reduce((obj, [key, value]) => {
+    obj[key] = value;
+    return obj;
+  }, {});
 });
 
 function formatDate(dateString) {
@@ -461,16 +367,11 @@ function formatDate(dateString) {
   const options = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' };
   try {
     return new Date(dateString + 'T00:00:00Z').toLocaleDateString('ja-JP', options);
-  } catch(e) {
-    return dateString;
-  }
+  } catch(e) { return dateString; }
 }
 
 function formatSlotStatus(status) {
-  const statusMap = {
-    'MANY': '残数あり', 'FULL': '完売', 'FEW': '残りわずか',
-    'NOT_IN_SALES_PERIOD': '販売開始前'
-  };
+  const statusMap = { 'MANY': '残数あり', 'FULL': '完売', 'FEW': '残りわずか', 'NOT_IN_SALES_PERIOD': '販売開始前' };
   return statusMap[status] || status;
 }
 
@@ -484,25 +385,17 @@ function getSlotStatusClass(status) {
 }
 
 function getDayOfWeek(dateString) {
-  // dateString is 'YYYY-MM-DD'
-  // Need to be careful with timezone if just new Date(dateString) is used.
-  // Assuming dateString is effectively a local date for the purpose of day of week.
   const [year, month, day] = dateString.split('-').map(Number);
-  // JavaScript's Date month is 0-indexed.
-  return new Date(year, month - 1, day).getDay(); // 0 for Sunday, 1 for Monday, ...
+  return new Date(year, month - 1, day).getDay();
 }
 
-// selectUserStatus 関数を削除
-
-// 新しい関数: ユーザーステータスに応じたCSSクラスを返す
 function getUserSlotClass(status) {
   if (status === 'going') return 'status-going';
   if (status === 'maybe') return 'status-maybe';
   if (status === 'not_going') return 'status-not-going';
-  return 'status-undefined'; // 未選択またはキーが存在しない場合
+  return 'status-undefined';
 }
 
-// 新しい関数: ユーザーステータスを日本語文字列で返す
 function formatUserSelectionStatus(status) {
   if (status === 'going') return '行ける';
   if (status === 'maybe') return '微妙';
@@ -510,261 +403,157 @@ function formatUserSelectionStatus(status) {
   return '未選択';
 }
 
-// 新しい関数: スロットのステータスをトグルする
 function toggleSlotStatus(slotUtcTime) {
-  // Check if the slot is sold out
   if (isSlotSoldOut(slotUtcTime)) {
-    // If sold out, set status to 'undefined' (unselected)
-    userSelection[slotUtcTime] = 'not_going'; 
-    // Optionally, provide feedback to the user that this slot is full
-    // console.log(`Slot ${slotUtcTime} is full and has been set to 'unselected'.`);
-    // saveMessage.value = { text: 'この時間は満席のため「未選択」に設定されました。', type: 'info' };
-    return; // Exit the function
+    userSelection[slotUtcTime] = 'not_going';
+    return;
   }
-
   const currentStatus = userSelection[slotUtcTime];
   const currentIndex = possibleStatuses.indexOf(currentStatus);
   const nextIndex = (currentIndex + 1) % possibleStatuses.length;
   const nextStatus = possibleStatuses[nextIndex];
-
-  if (nextStatus === undefined) {
-    delete userSelection[slotUtcTime]; // 未選択の場合はキーを削除
-  } else {
-    userSelection[slotUtcTime] = nextStatus;
-  }
-
-  saveMessage.value = { text: '', type: '' }; // 保存メッセージをクリア
-
-  // バルクステータスのリセットロジック
+  if (nextStatus === undefined) delete userSelection[slotUtcTime];
+  else userSelection[slotUtcTime] = nextStatus;
+  saveMessage.value = { text: '', type: '' };
   try {
-    const datePart = slotUtcTime.substring(0, 10); // Extracts 'YYYY-MM-DD'
-    if (dateActiveBulkStatus[datePart] !== undefined) {
-      dateActiveBulkStatus[datePart] = null;
-    }
-    
+    const datePart = slotUtcTime.substring(0, 10);
+    if (dateActiveBulkStatus[datePart] !== undefined) dateActiveBulkStatus[datePart] = null;
     const dayIndex = getDayOfWeek(datePart);
-    if (weekdayActiveBulkStatus[dayIndex] !== undefined) {
-      weekdayActiveBulkStatus[dayIndex] = null;
-    }
-  } catch (e) {
-    console.error("Error processing slotUtcTime for bulk status reset:", e);
-  }
-  console.log(`Toggled status to: ${nextStatus} for slot: ${slotUtcTime}. Current userSelection:`, JSON.parse(JSON.stringify(userSelection)));
+    if (weekdayActiveBulkStatus[dayIndex] !== undefined) weekdayActiveBulkStatus[dayIndex] = null;
+  } catch (e) { console.error("Error processing slotUtcTime for bulk status reset:", e); }
 }
 
-
-// 日付ごとの一括変更処理
 function setBulkStatusForDate(date, status) {
   if (schedule.value[date] && Array.isArray(schedule.value[date])) {
     schedule.value[date].forEach(slot => {
       if (slot && slot.originalStartTimeUTC) {
-        if (isSlotSoldOut(slot.originalStartTimeUTC)) {
-          userSelection[slot.originalStartTimeUTC] = 'not_going';
-        } else {
-          userSelection[slot.originalStartTimeUTC] = status;
-        }
+        if (isSlotSoldOut(slot.originalStartTimeUTC)) userSelection[slot.originalStartTimeUTC] = 'not_going';
+        else userSelection[slot.originalStartTimeUTC] = status;
       }
     });
     dateActiveBulkStatus[date] = status;
-    // Potentially reset related weekday bulk status if this action makes it inconsistent
-    // For simplicity, we'll only set the date one for now.
-    // Or, we could try to determine if this date action makes a weekday fully one status.
     const dayIndex = getDayOfWeek(date);
-    weekdayActiveBulkStatus[dayIndex] = null; // Reset weekday if a specific date within it is changed
-
-    saveMessage.value = { text: '', type: '' }; // 保存メッセージをクリア
-    console.log(`Bulk status '${status}' set for date '${date}'`, JSON.parse(JSON.stringify(userSelection)));
+    weekdayActiveBulkStatus[dayIndex] = null;
+    saveMessage.value = { text: '', type: '' };
   }
 }
 
-// 曜日ごとの一括変更処理 (0:日曜, 1:月曜, ..., 6:土曜) - 新しいUIに置き換えられるため削除
-/*
-function setBulkStatusForWeekday(targetDayIndex, status) {
-  // ... (古いコード) ...
-}
-*/
-
-// 新しい曜日別詳細一括設定関連の関数
 function getRepresentativeSlotsForDay(dayIndex) {
-  // weekdayRepresentativeSlots.value が存在し、dayIndex キーを持つことを確認
-  return weekdayRepresentativeSlots.value && weekdayRepresentativeSlots.value[dayIndex] 
-    ? weekdayRepresentativeSlots.value[dayIndex] 
-    : [];
+  return weekdayRepresentativeSlots.value && weekdayRepresentativeSlots.value[dayIndex] ? weekdayRepresentativeSlots.value[dayIndex] : [];
 }
 
-// openWeekdayBulkModal をモーダル統合版に更新
 function openWeekdayBulkModal(dayIndex) {
   modalMode.value = 'weekdayBulk';
   selectedWeekdayForBulkModal.value = dayIndex;
-  // bulkWeekdaySlotSelections[dayIndex] が未定義なら初期化
   if (!bulkWeekdaySlotSelections[dayIndex]) {
     bulkWeekdaySlotSelections[dayIndex] = {};
     const representativeSlots = getRepresentativeSlotsForDay(dayIndex);
     representativeSlots.forEach(slotTimeHHMM => {
-      // 初期状態は未選択 (undefined)
       bulkWeekdaySlotSelections[dayIndex][slotTimeHHMM] = undefined;
     });
   }
-  // モーダルを開く際に、その曜日の全体一括ステータスをリセット
   weekdayOverallActiveBulkStatus[dayIndex] = null;
-  isModalOpen.value = true; // 共通モーダルを開く
+  isModalOpen.value = true;
 }
 
-// toggleBulkSlotStatus は特定の曜日の特定の代表スロットのステータスをトグルします
-// (この関数は上で定義済み、内容確認・重複削除)
-
-// ★★★ START: 新しい関数 ★★★
 function setOverallBulkStatusForWeekday(dayIndex, status) {
-  if (dayIndex === null || !bulkWeekdaySlotSelections[dayIndex]) {
-    console.warn('Cannot set overall bulk status: dayIndex is null or no bulk selections initialized for this dayIndex.');
-    return;
-  }
+  if (dayIndex === null || !bulkWeekdaySlotSelections[dayIndex]) return;
   const representativeSlots = getRepresentativeSlotsForDay(dayIndex);
-  if (!representativeSlots || representativeSlots.length === 0) {
-    console.warn('No representative slots to set overall status for.');
-    return;
-  }
-
+  if (!representativeSlots || representativeSlots.length === 0) return;
   let allSlotsUpdated = true;
   representativeSlots.forEach(slotTimeHHMM => {
     if (bulkWeekdaySlotSelections[dayIndex].hasOwnProperty(slotTimeHHMM)) {
       bulkWeekdaySlotSelections[dayIndex][slotTimeHHMM] = status;
     } else {
-      // This case should ideally not happen if bulkWeekdaySlotSelections is properly initialized
-      // with all representative slots.
-      console.warn(`Slot ${slotTimeHHMM} not found in bulk selections for dayIndex ${dayIndex}. Initializing it.`);
-      bulkWeekdaySlotSelections[dayIndex][slotTimeHHMM] = status; 
+      bulkWeekdaySlotSelections[dayIndex][slotTimeHHMM] = status;
     }
   });
-
-  if(allSlotsUpdated){
-    weekdayOverallActiveBulkStatus[dayIndex] = status;
-  } else {
-    // If somehow not all slots could be updated (e.g. representativeSlots had items not in bulkWeekdaySlotSelections)
-    // then the overall status might be inconsistent, so reset it.
-    weekdayOverallActiveBulkStatus[dayIndex] = null;
-  }
-  
-  saveMessage.value = { text: '', type: '' }; // 保存メッセージをクリア
-  console.log(`Overall bulk status '${status}' set for weekday index '${dayIndex}' in modal. Selections:`, JSON.parse(JSON.stringify(bulkWeekdaySlotSelections[dayIndex])));
+  if(allSlotsUpdated) weekdayOverallActiveBulkStatus[dayIndex] = status;
+  else weekdayOverallActiveBulkStatus[dayIndex] = null;
+  saveMessage.value = { text: '', type: '' };
 }
-// ★★★ END: 新しい関数 ★★★
 
-// applyBulkWeekdaySelections は特定の曜日のモーダルで設定された各スロットのステータスを、
-// 実際の userSelection に適用します。
-// (この関数は上で定義済み、内容確認・重複削除)
-
-// toggleBulkSlotStatus 関数の定義
 function toggleBulkSlotStatus(dayIndex, slotTimeHHMM) {
-  if (!bulkWeekdaySlotSelections[dayIndex]) {
-    bulkWeekdaySlotSelections[dayIndex] = {};
-  }
-
+  if (!bulkWeekdaySlotSelections[dayIndex]) bulkWeekdaySlotSelections[dayIndex] = {};
   const currentStatus = bulkWeekdaySlotSelections[dayIndex][slotTimeHHMM];
   const currentIndex = possibleStatuses.indexOf(currentStatus);
   const nextIndex = (currentIndex + 1) % possibleStatuses.length;
   const nextStatus = possibleStatuses[nextIndex];
-
-  if (nextStatus === undefined) {
-    bulkWeekdaySlotSelections[dayIndex][slotTimeHHMM] = undefined;
-  } else {
-    bulkWeekdaySlotSelections[dayIndex][slotTimeHHMM] = nextStatus;
-  }
-
-  // 曜日全体のバルクステータスが設定されていた場合、個別の変更によりリセット
-  if (weekdayOverallActiveBulkStatus[dayIndex] !== undefined && weekdayOverallActiveBulkStatus[dayIndex] !== null) {
-      weekdayOverallActiveBulkStatus[dayIndex] = null;
-  }
-
-  saveMessage.value = { text: '', type: '' }; // 保存メッセージをクリア (必要に応じて)
-  // console.log(`Toggled bulk slot status for weekday ${dayIndex}, time ${slotTimeHHMM} to: ${nextStatus}. Selections:`, JSON.parse(JSON.stringify(bulkWeekdaySlotSelections[dayIndex])));
+  if (nextStatus === undefined) bulkWeekdaySlotSelections[dayIndex][slotTimeHHMM] = undefined;
+  else bulkWeekdaySlotSelections[dayIndex][slotTimeHHMM] = nextStatus;
+  if (weekdayOverallActiveBulkStatus[dayIndex] !== undefined && weekdayOverallActiveBulkStatus[dayIndex] !== null) weekdayOverallActiveBulkStatus[dayIndex] = null;
+  saveMessage.value = { text: '', type: '' };
 }
-
 
 function applyBulkWeekdaySelections(dayIndex) {
   const selectionsForWeekday = bulkWeekdaySlotSelections[dayIndex];
-  if (!selectionsForWeekday) {
-    console.warn(`No bulk selections found for weekday index ${dayIndex}.`);
-    return;
-  }
-
+  if (!selectionsForWeekday) return;
   let changesMade = false;
   Object.keys(sortedSchedule.value).forEach(dateKey => {
-    const dateObject = new Date(dateKey + 'T00:00:00Z'); // UTCとして解釈
-    if (dateObject.getUTCDay() === dayIndex) { // 対象の曜日か確認
+    const dateObject = new Date(dateKey + 'T00:00:00Z');
+    if (dateObject.getUTCDay() === dayIndex) {
       if (schedule.value[dateKey] && Array.isArray(schedule.value[dateKey])) {
         schedule.value[dateKey].forEach(slot => {
           if (slot && slot.originalStartTimeUTC) {
             let slotTimeHHMM;
             try {
               slotTimeHHMM = new Date(slot.originalStartTimeUTC).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
-            } catch (e) {
-              console.error("Error formatting slot time during bulk apply:", slot.originalStartTimeUTC, e);
-              return; // このスロットはスキップ
-            }
-
-            // 代表スロットの時刻と一致するか確認
+            } catch (e) { return; }
             if (selectionsForWeekday.hasOwnProperty(slotTimeHHMM)) {
               const newStatus = selectionsForWeekday[slotTimeHHMM];
               const currentActualStatus = userSelection[slot.originalStartTimeUTC];
-
               if (isSlotSoldOut(slot.originalStartTimeUTC)) {
                 userSelection[slot.originalStartTimeUTC] = 'not_going';
                 changesMade = true;
               } else {
-                if (newStatus === undefined) { // 未選択に設定する場合
-                  if (currentActualStatus !== undefined) { // 既に何か選択されていれば削除
+                if (newStatus === undefined) {
+                  if (currentActualStatus !== undefined) {
                     userSelection[slot.originalStartTimeUTC] = 'not_going';
                     changesMade = true;
                   }
-                } else { // 'going', 'maybe', 'not_going' に設定する場合
-                  if (currentActualStatus !== newStatus) { // 状態が異なる場合のみ更新
+                } else {
+                  if (currentActualStatus !== newStatus) {
                     userSelection[slot.originalStartTimeUTC] = newStatus;
                     changesMade = true;
                   }
                 }
               }
-              // この日付の dateActiveBulkStatus をリセット (変更があった場合のみでも良いが、簡潔さのため常に)
-              if (dateActiveBulkStatus[dateKey] !== undefined && dateActiveBulkStatus[dateKey] !== null) {
-                 dateActiveBulkStatus[dateKey] = null;
-              }
+              if (dateActiveBulkStatus[dateKey] !== undefined && dateActiveBulkStatus[dateKey] !== null) dateActiveBulkStatus[dateKey] = null;
             }
           }
         });
       }
     }
   });
-
-  if (changesMade) {
-    saveMessage.value = { text: '', type: '' }; // 保存メッセージをクリア
-    console.log(`Applied bulk selections for weekday ${dayIndex}. Current userSelection:`, JSON.parse(JSON.stringify(userSelection)));
-  }
-  
-  // 曜日別の一括設定UIのアクティブ状態（もしあれば）をリセット
-  if (weekdayActiveBulkStatus[dayIndex] !== undefined && weekdayActiveBulkStatus[dayIndex] !== null) {
-    weekdayActiveBulkStatus[dayIndex] = null;
-  }
-  closeModal(); // 共通モーダルを閉じる
+  if (changesMade) saveMessage.value = { text: '', type: '' };
+  if (weekdayActiveBulkStatus[dayIndex] !== undefined && weekdayActiveBulkStatus[dayIndex] !== null) weekdayActiveBulkStatus[dayIndex] = null;
+  closeModal();
 }
 
-
-const username = ref(''); // 初期値を空文字列に設定
+const username = ref('');
 
 async function fetchUsername() {
   try {
-    console.log('[Auth] Fetching username...');
     const response = await axios.get(`${API_BASE_URL}/get-username`);
-    if (response.data && response.data.username) {
-      username.value = response.data.username;
-      console.log('[Auth] Username fetched:', username.value);
-    } else {
-      console.log('[Auth] Username not found in response or is null.');
-      username.value = ''; // or a default/guest username
-    }
+    if (response.data && response.data.username) username.value = response.data.username;
+    else username.value = '';
   } catch (error) {
     console.error('[Auth] Error fetching username:', error);
     errorMessage.value = 'ユーザー名の取得に失敗しました。';
-    username.value = ''; // エラー時もクリア
+    username.value = '';
+  }
+}
+
+async function fetchAllPersonalSchedules() {
+  if (!username.value) {
+    allPersonalSchedules.value = [];
+    return;
+  }
+  try {
+    const response = await axios.get(`${API_BASE_URL}/my-calendar`);
+    allPersonalSchedules.value = response.data;
+  } catch (error) {
+    console.error('マイカレンダーの予定取得に失敗しました:', error);
   }
 }
 
@@ -774,154 +563,84 @@ const googleMapsUrl = computed(() => {
 });
 
 function openGoogleMaps() {
-  if (locationAddressRef.value) {
-    window.open(googleMapsUrl.value, '_blank', 'noopener,noreferrer');
-  }
+  if (locationAddressRef.value) window.open(googleMapsUrl.value, '_blank', 'noopener,noreferrer');
 }
 
 async function fetchScheduleData(eventUrl, dateFrom, dateTo, locationUid) {
-  if (!eventUrl || !dateFrom || !dateTo || !locationUid) {
-    console.warn('[ScheduleFetch] Missing parameters for fetchScheduleData. Required: eventUrl, dateFrom, dateTo, locationUid. Received:', { eventUrl, dateFrom, dateTo, locationUid });
+  const isYodaka = eventUrl && eventUrl.startsWith('https://yodaka.info/');
+  if (!eventUrl || !dateFrom || !dateTo || (!locationUid && !isYodaka)) {
     schedule.value = { dates: [], message: 'スケジュール取得に必要な情報が不足しています。' };
     return;
   }
-  console.log(`[ScheduleFetch] Fetching schedule for ${eventUrl} from ${dateFrom} to ${dateTo} for location ${locationUid}`);
   loading.value = true;
   errorMessage.value = '';
-  schedule.value = {}; // Reset schedule before fetching
-
+  schedule.value = {};
   try {
-    // APIエンドポイントとメソッドを変更
-    const response = await axios.post(`${API_BASE_URL}/get-schedule`, {
-      event_url: eventUrl,
-      date_from: dateFrom,
-      date_to: dateTo,
-      location_uid: locationUid
-    });
-
-    console.log('[ScheduleFetch] Raw API Response:', JSON.parse(JSON.stringify(response.data))); // ★ 詳細なレスポンス全体ログ
-    console.log('[ScheduleFetch] Raw API Response Data:', JSON.parse(JSON.stringify(response.data))); // ★ レスポンスデータログ
-
-    if (response.data && typeof response.data === 'object') { // Object.keysチェックを一旦削除してdata自体の存在を確認
-      console.log('[ScheduleFetch] Processing response.data.dates:', response.data.dates ? JSON.parse(JSON.stringify(response.data.dates)) : 'response.data.dates is undefined/null'); // ★ dates配列のログ
-
+    const response = await axios.post(`${API_BASE_URL}/get-schedule`, { event_url: eventUrl, date_from: dateFrom, date_to: dateTo, location_uid: locationUid });
+    if (response.data && typeof response.data === 'object') {
       const formattedSchedule = {};
       if (response.data.dates && Array.isArray(response.data.dates)) {
-        if (response.data.dates.length === 0) {
-            console.log('[ScheduleFetch] response.data.dates is an empty array.');
-        }
         response.data.dates.forEach(dateEntry => {
-          if (dateEntry && dateEntry.date && Array.isArray(dateEntry.slots)) { // ★ dateEntry と slots の存在チェックを追加
-            const dateKey = dateEntry.date; // YYYY-MM-DD
+          if (dateEntry && dateEntry.date && Array.isArray(dateEntry.slots)) {
+            const dateKey = dateEntry.date;
             formattedSchedule[dateKey] = dateEntry.slots.map(slot => ({
               time: new Date(slot.startAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' }),
-              status: slot.vacancyType, 
+              status: slot.vacancyType,
               originalStartTimeUTC: slot.startAt,
             }));
-          } else {
-            console.warn('[ScheduleFetch] Invalid dateEntry or slots missing:', dateEntry);
           }
         });
         schedule.value = formattedSchedule;
+      } else if (response.data.allTimeSlotsUTC && Array.isArray(response.data.allTimeSlotsUTC)) {
+        const tempSchedule = {};
+        response.data.allTimeSlotsUTC.forEach(utcTime => {
+          const date = new Date(utcTime);
+          const dateKey = date.toISOString().split('T')[0];
+          if (!tempSchedule[dateKey]) tempSchedule[dateKey] = [];
+          tempSchedule[dateKey].push({ time: date.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' }), status: 'unknown', originalStartTimeUTC: utcTime });
+        });
+        for (const dateKey in tempSchedule) tempSchedule[dateKey].sort((a, b) => new Date(a.originalStartTimeUTC) - new Date(b.originalStartTimeUTC));
+        schedule.value = tempSchedule;
       } else {
-        console.warn('[ScheduleFetch] response.data.dates is missing, not an array, or main response.data is empty. Response data:', JSON.parse(JSON.stringify(response.data)));
-        // フォールバックロジックは現状維持 (allTimeSlotsUTC)
-        if (response.data.allTimeSlotsUTC && Array.isArray(response.data.allTimeSlotsUTC)) {
-            const tempSchedule = {};
-            response.data.allTimeSlotsUTC.forEach(utcTime => {
-                const date = new Date(utcTime);
-                const dateKey = date.toISOString().split('T')[0];
-                if (!tempSchedule[dateKey]) {
-                    tempSchedule[dateKey] = [];
-                }
-                tempSchedule[dateKey].push({
-                    time: date.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' }),
-                    status: 'unknown', 
-                    originalStartTimeUTC: utcTime,
-                });
-            });
-            for (const dateKey in tempSchedule) {
-                tempSchedule[dateKey].sort((a, b) => new Date(a.originalStartTimeUTC) - new Date(b.originalStartTimeUTC));
-            }
-            schedule.value = tempSchedule;
-            console.log('[ScheduleFetch] Constructed schedule from allTimeSlotsUTC:', schedule.value);
-        } else {
-            console.warn('[ScheduleFetch] No parsable schedule data found in response.data.dates or response.data.allTimeSlotsUTC. Setting schedule to empty.');
-            schedule.value = {}; 
-        }
-      }
-      console.log('[ScheduleFetch] Formatted schedule (after processing):', JSON.parse(JSON.stringify(schedule.value)));
-      if (Object.keys(schedule.value).length === 0 && !errorMessage.value) {
-          console.log('[ScheduleFetch] No schedule slots found for the given period/event.');
-          // errorMessage.value = '対象期間に開催情報が見つかりませんでした。'; // これは表示メッセージなので、ここではログに留める
+        schedule.value = {};
       }
     } else {
-      console.warn('[ScheduleFetch] No schedule data received or data is empty/invalid type.');
       schedule.value = {};
-      if (!errorMessage.value) { // エラーメッセージが他で設定されていなければ
-        // errorMessage.value = 'スケジュールデータを取得できませんでした。';
-      }
     }
   } catch (err) {
     console.error('[ScheduleFetch] Error fetching schedule:', err);
     let errorMsg = 'スケジュールの取得に失敗しました';
-    if (err.response) {
-      console.error('[ScheduleFetch] Error response data:', err.response.data);
-      console.error('[ScheduleFetch] Error response status:', err.response.status);
-      errorMsg += ` (ステータス: ${err.response.status})`;
-      if (err.response.data && err.response.data.error) {
-        errorMsg += `: ${err.response.data.error}`;
-      }
-    } else if (err.request) {
-      console.error('[ScheduleFetch] Error request:', err.request);
-      errorMsg += '。サーバーからの応答がありません。';
-    } else {
-      errorMsg += `。エラー: ${err.message}`;
-    }
+    if (err.response) errorMsg += ` (ステータス: ${err.response.status})` + (err.response.data && err.response.data.error ? `: ${err.response.data.error}` : '');
+    else if (err.request) errorMsg += '。サーバーからの応答がありません。';
+    else errorMsg += `。エラー: ${err.message}`;
     errorMessage.value = errorMsg;
-    schedule.value = {}; // エラー時はスケジュールをクリア
+    schedule.value = {};
   } finally {
     loading.value = false;
-    initialLoadDone.value = true; // 初回ロード試行完了
-    console.log('[ScheduleFetch] Fetch schedule finished. Loading:', loading.value, 'InitialLoadDone:', initialLoadDone.value);
-    // ユーザー名が取得できていれば、続けてユーザーステータスをロード
-    if (username.value && eventUrlRef.value) {
-      console.log('[ScheduleFetch] Triggering loadUserStatus after schedule fetch. Username:', username.value, 'EventURL:', eventUrlRef.value);
-      await loadUserStatus(username.value, eventUrlRef.value);
-    } else {
-      console.warn('[ScheduleFetch] Skipping loadUserStatus because username or eventUrl is missing.', { username: username.value, eventUrl: eventUrlRef.value });
-    }
+    initialLoadDone.value = true;
+    if (username.value && eventUrlRef.value) await loadUserStatus(username.value, eventUrlRef.value);
   }
 }
 
 async function fetchEventDetailsBySlugs(orgSlug, eventSlug) {
-  // Reconstruct the full eventUrl from slugs
-  // Ensuring it ends with a trailing slash to match backend normalization
-  const eventUrl = `https://escape.id/org/${orgSlug}/event/${eventSlug}/`;
-  console.log(`[SchedulePage] Reconstructed eventUrl: ${eventUrl}`);
-
+  let eventUrl;
+  if (orgSlug === 'Yodaka') eventUrl = `https://yodaka.info/event/${eventSlug}/`;
+  else eventUrl = `https://escape.id/${orgSlug}-org/e-${eventSlug}/`;
   loading.value = true;
   errorMessage.value = '';
-  // Use the already reconstructed and normalized eventUrl for eventUrlRef
-  eventUrlRef.value = eventUrl; 
-  console.log('[EventDetailsFetch] Using eventUrl for API call:', eventUrl);
-
+  eventUrlRef.value = eventUrl;
   try {
-    const encodedEventUrl = encodeURIComponent(eventUrl); // Use the normalized eventUrl
+    const encodedEventUrl = encodeURIComponent(eventUrl);
     const response = await axios.get(`${API_BASE_URL}/events/${encodedEventUrl}`);
     const eventDetails = response.data;
-
     locationUidRef.value = eventDetails.locationUid;
     currentStartDate.value = formatDateForInput(new Date(eventDetails.startDate));
     currentEndDate.value = formatDateForInput(new Date(eventDetails.endDate));
     eventDisplayNameRef.value = eventDetails.name;
-    eventUrlRef.value = eventDetails.event_url; // イベントURLを更新
-    locationUidRef.value = eventDetails.location_uid; // location_uid を保存
-    estimatedTimeRef.value = eventDetails.estimated_time; // 所要時間を保存
-    locationAddressRef.value = eventDetails.location_address; // ★ 開催地住所を保存
-
-    // データ取得後、スケジュールデータをフェッチ
-    if (eventUrlRef.value && currentStartDate.value && currentEndDate.value && locationUidRef.value) {
+    eventUrlRef.value = eventDetails.event_url;
+    estimatedTimeRef.value = eventDetails.estimated_time;
+    locationAddressRef.value = eventDetails.location_address;
+    if (eventUrlRef.value && currentStartDate.value && currentEndDate.value && (locationUidRef.value || orgSlug === 'Yodaka')) {
       await fetchScheduleData(eventUrlRef.value, currentStartDate.value, currentEndDate.value, locationUidRef.value);
     }
     initialLoadDone.value = true;
@@ -934,13 +653,12 @@ async function fetchEventDetailsBySlugs(orgSlug, eventSlug) {
 
 async function initializePage() {
   await fetchUsername();
-  if (props.orgSlug && props.eventSlug) {
-    await fetchEventDetailsBySlugs(props.orgSlug, props.eventSlug);
-  } else {
+  await fetchAllPersonalSchedules();
+  if (props.orgSlug && props.eventSlug) await fetchEventDetailsBySlugs(props.orgSlug, props.eventSlug);
+  else {
     errorMessage.value = 'イベント情報が不足しています。';
     loading.value = false;
   }
-  // initialLoadDone は fetchEventDetailsBySlug の中で設定される
 }
 
 onMounted(async () => {
@@ -952,73 +670,48 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown);
 });
 
-// Watch for changes in route query parameters to re-initialize if eventUrl changes
 watch(() => [props.orgSlug, props.eventSlug], async (newSlugs, oldSlugs) => {
   const [newOrgSlug, newEventSlug] = newSlugs;
   if (newOrgSlug && newEventSlug) {
-    console.log('[Watch Slugs] orgSlug or eventSlug changed, re-initializing with:', newOrgSlug, newEventSlug);
     await fetchEventDetailsBySlugs(newOrgSlug, newEventSlug);
-    if (username.value && eventUrlRef.value) { // Ensure eventUrlRef is set
-      await loadUserStatus(username.value, eventUrlRef.value);
-    }
+    if (username.value && eventUrlRef.value) await loadUserStatus(username.value, eventUrlRef.value);
   }
-}, { immediate: false }); // immediate: true だと onMounted と二重実行の可能性があるので注意
+}, { immediate: false });
 
-// ユーザー名が変更されたら、そのユーザーの選択をロードする
 watch(username, async (newUsername, oldUsername) => {
-  console.log(`[Watch] Username changed from "${oldUsername}" to "${newUsername}"`);
   if (newUsername && eventUrlRef.value && newUsername !== oldUsername) {
-    console.log('[Watch] Username changed, attempting to load user status for:', newUsername);
     await loadUserStatus(newUsername, eventUrlRef.value);
+    await fetchAllPersonalSchedules();
   } else if (!newUsername) {
-    // ユーザー名がクリアされた場合、選択もクリアする（またはゲスト状態にする）
     Object.keys(userSelection).forEach(key => delete userSelection[key]);
-    console.log('[Watch] Username cleared, user selections cleared.');
+    allPersonalSchedules.value = [];
   }
 });
 
 function onUsernameChange() {
-  // この関数は v-model で username が更新された後に呼ばれるので、
-  // watch(username, ...) がその変更を検知して loadUserStatus を呼び出す。
-  // 必要であれば、ここに追加のロジック（例: localStorageへの保存など）を記述。
-  console.log('Username input changed, current value:', username.value);
-  saveMessage.value = { text: '', type: '' }; // ユーザー変更時は保存メッセージをクリア
+  saveMessage.value = { text: '', type: '' };
 }
 
 async function loadUserStatus(user, url) {
   if (!user || !url) {
-    console.warn('[StatusLoad] Missing user or url for loadUserStatus. User:', user, 'URL:', url);
-    // ユーザー選択をクリアする（オプション）
     Object.keys(userSelection).forEach(key => delete userSelection[key]);
     return;
   }
-  console.log(`[StatusLoad] Loading user status for ${user} and ${url}`);
-  errorMessage.value = ''; // 読み込み開始時にエラーメッセージをクリア
-
+  errorMessage.value = '';
   try {
-    const response = await axios.get(`${API_BASE_URL}/load-my-status`, {
-      params: { username: user, eventUrl: url },
-    });
+    const response = await axios.get(`${API_BASE_URL}/load-my-status`, { params: { username: user, eventUrl: url } });
     if (response.data && Array.isArray(response.data)) {
       Object.keys(userSelection).forEach(key => delete userSelection[key]);
       response.data.forEach(item => {
-        if (isSlotSoldOut(item.event_datetime_utc)) {
-          // For sold-out slots, ensure they are treated as 'unselected' (undefined)
-          // regardless of what was saved. So, we simply don't set userSelection for this item.
-        } else {
-          userSelection[item.event_datetime_utc] = item.status;
-        }
+        if (!isSlotSoldOut(item.event_datetime_utc)) userSelection[item.event_datetime_utc] = item.status;
       });
-      console.log('[StatusLoad] User status loaded and applied (sold-out slots are unselected):', JSON.parse(JSON.stringify(userSelection)));
       Object.keys(dateActiveBulkStatus).forEach(key => dateActiveBulkStatus[key] = null);
       Object.keys(weekdayActiveBulkStatus).forEach(key => weekdayActiveBulkStatus[key] = null);
     } else if (response.data && Object.keys(response.data).length === 0) {
-        console.log('[StatusLoad] No saved status found for this user/event. Clearing local selections.');
-        Object.keys(userSelection).forEach(key => delete userSelection[key]);
-        Object.keys(dateActiveBulkStatus).forEach(key => dateActiveBulkStatus[key] = null);
-        Object.keys(weekdayActiveBulkStatus).forEach(key => weekdayActiveBulkStatus[key] = null);
+      Object.keys(userSelection).forEach(key => delete userSelection[key]);
+      Object.keys(dateActiveBulkStatus).forEach(key => dateActiveBulkStatus[key] = null);
+      Object.keys(weekdayActiveBulkStatus).forEach(key => weekdayActiveBulkStatus[key] = null);
     } else {
-      console.warn('[StatusLoad] Received unexpected data format:', response.data);
       errorMessage.value = '以前の選択の読み込み中に予期せぬデータ形式を受信しました。';
     }
   } catch (error) {
@@ -1026,14 +719,11 @@ async function loadUserStatus(user, url) {
     let userFriendlyMessage = '以前の選択の読み込みに失敗しました。';
     if (error.response && error.response.data && typeof error.response.data === 'object' && error.response.data.error) {
       userFriendlyMessage += ` サーバーエラー: ${error.response.data.error}`;
-      if (error.response.data.details) {
-        userFriendlyMessage += ` 詳細: ${error.response.data.details}`;
-      }
+      if (error.response.data.details) userFriendlyMessage += ` 詳細: ${error.response.data.details}`;
     } else if (error.response && typeof error.response.data === 'string' && error.response.data.includes('ReferenceError: rows is not defined')) {
-      // このケースはサーバー側の古いエラーの名残かもしれないが、念のためキャッチ
       userFriendlyMessage += ' サーバー内部でエラーが発生しました (データ参照エラー)。';
     } else if (error.response && typeof error.response.data === 'string' && error.response.data.toLowerCase().includes('syntaxerror')) {
-        userFriendlyMessage += ' 保存されたデータの形式が正しくありません。';
+      userFriendlyMessage += ' 保存されたデータの形式が正しくありません。';
     } else if (error.message) {
       userFriendlyMessage += ` (${error.message})`;
     }
@@ -1046,7 +736,7 @@ async function loadUserStatus(user, url) {
 
 async function saveSelections() {
   if (!username.value) {
-    saveMessage.value = { text: 'ユーザー名を入力してください。', type: 'error' }; // errorMessageではなくsaveMessageに表示
+    saveMessage.value = { text: 'ユーザー名を入力してください。', type: 'error' };
     return;
   }
   if (!eventUrlRef.value) {
@@ -1055,34 +745,13 @@ async function saveSelections() {
   }
   savingSelections.value = true;
   saveMessage.value = { text: '', type: '' };
-
   try {
-    const selectionsToSave = Object.keys(userSelection).map(key => ({
-      event_datetime_utc: key, // キーを event_datetime_utc に変更
-      status: userSelection[key],
-    }));
-
-    console.log('[SaveSelections] Attempting to save:', {
-      username: username.value,
-      eventUrl: eventUrlRef.value, // eventUrl を追加
-      selections: selectionsToSave
-    });
-
-    const response = await axios.post(`${API_BASE_URL}/save-my-status`, { // エンドポイントを /save-my-status に変更
-      username: username.value,
-      eventUrl: eventUrlRef.value, // eventUrl を追加
-      selections: selectionsToSave,
-    });
-
-    // バックエンド /api/save-my-status は 204 No Content を返す想定
-    // そのため、response.data を直接チェックする代わりにステータスコードで成功を判断
+    const selectionsToSave = Object.keys(userSelection).map(key => ({ event_datetime_utc: key, status: userSelection[key] }));
+    const response = await axios.post(`${API_BASE_URL}/save-my-status`, { username: username.value, eventUrl: eventUrlRef.value, selections: selectionsToSave });
     if (response.status === 204) {
       saveMessage.value = { text: '選択が保存されました。', type: 'success' };
-      console.log('[SaveSelections] Selections saved successfully.');
     } else {
-      // 204以外のステータスコードや、万が一データが返ってきた場合の処理
       saveMessage.value = { text: '選択の保存に失敗しました。サーバーからの応答が予期せぬものです。', type: 'error' };
-      console.warn('[SaveSelections] Unexpected server response status or data:', response);
     }
   } catch (error) {
     console.error('[SaveSelections] Error saving selections:', error);
@@ -1093,162 +762,91 @@ async function saveSelections() {
 }
 
 const slotsForModal = computed(() => {
-  if (modalMode.value !== 'date' || !selectedDateForModal.value || !schedule.value[selectedDateForModal.value]) {
-    return [];
-  }
-  // schedule.value[dateString] は既にソートされている想定だが、念のためソートする
-  return [...schedule.value[selectedDateForModal.value]].sort((a, b) =>
-    new Date(a.originalStartTimeUTC) - new Date(b.originalStartTimeUTC)
-  );
+  if (modalMode.value !== 'date' || !selectedDateForModal.value || !schedule.value[selectedDateForModal.value]) return [];
+  return [...schedule.value[selectedDateForModal.value]].sort((a, b) => new Date(a.originalStartTimeUTC) - new Date(b.originalStartTimeUTC));
 });
 
-// Calendar generation logic
 const calendarMonths = computed(() => {
-  if (!currentStartDate.value || !currentEndDate.value || !initialLoadDone.value) { // initialLoadDoneもチェック
-    return [];
-  }
-
+  if (!currentStartDate.value || !currentEndDate.value || !initialLoadDone.value) return [];
   const months = [];
-  // currentStartDateとcurrentEndDateをDateオブジェクトとして正しく扱う
-  // UTCの日付部分のみを考慮するため、T00:00:00Z を付与してパース
   let loopStartDate = new Date(currentStartDate.value + 'T00:00:00Z');
   const loopEndDate = new Date(currentEndDate.value + 'T00:00:00Z');
-
   let currentDateIterator = new Date(Date.UTC(loopStartDate.getUTCFullYear(), loopStartDate.getUTCMonth(), 1));
-
-  while (currentDateIterator.getUTCFullYear() < loopEndDate.getUTCFullYear() || 
-        (currentDateIterator.getUTCFullYear() === loopEndDate.getUTCFullYear() && currentDateIterator.getUTCMonth() <= loopEndDate.getUTCMonth())) {
+  while (currentDateIterator.getUTCFullYear() < loopEndDate.getUTCFullYear() || (currentDateIterator.getUTCFullYear() === loopEndDate.getUTCFullYear() && currentDateIterator.getUTCMonth() <= loopEndDate.getUTCMonth())) {
     const year = currentDateIterator.getUTCFullYear();
-    const month = currentDateIterator.getUTCMonth(); // 0-indexed
-
+    const month = currentDateIterator.getUTCMonth();
     const monthName = `${year}年${month + 1}月`;
     const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-    const firstDayOfMonthWeekday = new Date(Date.UTC(year, month, 1)).getUTCDay(); // 0 (Sun) - 6 (Sat)
-
+    const firstDayOfMonthWeekday = new Date(Date.UTC(year, month, 1)).getUTCDay();
     const weeks = [];
     let currentWeek = [];
-    
-    for (let i = 0; i < firstDayOfMonthWeekday; i++) {
-      currentWeek.push({ empty: true, key: `empty-${i}` });
-    }
-
+    for (let i = 0; i < firstDayOfMonthWeekday; i++) currentWeek.push({ empty: true, key: `empty-${i}` });
     for (let day = 1; day <= daysInMonth; day++) {
       const dateObj = new Date(Date.UTC(year, month, day));
       const dateString = dateObj.toISOString().split('T')[0];
-      
       const isWithinEventRange = dateObj >= loopStartDate && dateObj <= loopEndDate;
-      
       const hasSlots = schedule.value[dateString] && schedule.value[dateString].length > 0;
-      
-      currentWeek.push({
-        date: day,
-        dateString,
-        isToday: new Date().toISOString().split('T')[0] === dateString,
-        hasSlots,
-        isClickable: hasSlots && isWithinEventRange,
-        isWithinEventRange,
-        key: dateString
-      });
-
+      currentWeek.push({ date: day, dateString, isToday: new Date().toISOString().split('T')[0] === dateString, hasSlots, isClickable: hasSlots && isWithinEventRange, isWithinEventRange, key: dateString });
       if (currentWeek.length === 7) {
         weeks.push(currentWeek);
         currentWeek = [];
       }
     }
-
     if (currentWeek.length > 0) {
-      while (currentWeek.length < 7) {
-        currentWeek.push({ empty: true, key: `empty-end-${currentWeek.length}` });
-      }
+      while (currentWeek.length < 7) currentWeek.push({ empty: true, key: `empty-end-${currentWeek.length}` });
       weeks.push(currentWeek);
     }
     months.push({ monthName, weeks, key: monthName });
-
     currentDateIterator.setUTCMonth(currentDateIterator.getUTCMonth() + 1);
   }
   return months;
 });
 
-
 function openModalForDate(dateString) {
-  if (!schedule.value[dateString] || schedule.value[dateString].length === 0) {
-    console.log(`No slots for date ${dateString}, not opening modal.`);
-    return;
-  }
-  modalMode.value = 'date'; // モードを設定
+  if (!schedule.value[dateString] || schedule.value[dateString].length === 0) return;
+  modalMode.value = 'date';
   selectedDateForModal.value = dateString;
-  isModalOpen.value = true; // 共通モーダルを開く
-  console.log(`Modal opened for date: ${dateString}`);
+  isModalOpen.value = true;
 }
 
 function closeModal() {
   isModalOpen.value = false;
   modalMode.value = '';
   selectedDateForModal.value = null;
-  // selectedWeekdayForBulkModal.value = null; // 曜日選択は維持しても良いかもしれない
 }
 
 const handleKeydown = (e) => {
-  if (e.key === 'Escape' && isModalOpen.value) {
-    closeModal(); // 共通の closeModal を呼ぶ
-  }
+  if (e.key === 'Escape' && isModalOpen.value) closeModal();
 };
 
-const statusToColor = {
-  going: 'lightgreen',
-  maybe: 'yellow',
-  not_going: 'lightcoral',
-  unselected: 'lightcyan', // Default color for unselected slots
-};
+const statusToColor = { going: 'lightgreen', maybe: 'yellow', not_going: 'lightcoral', unselected: 'lightcyan' };
 
 const getWeekdayHeaderStyle = (dayIndex) => {
-  const representativeSlots = getRepresentativeSlotsForDay(dayIndex); // 代表スロットを取得しておく
-
-  if (representativeSlots.length === 0) {
-    return { backgroundColor: '#f9f9f9', color: '#6c757d' }; // No slots, light gray background
-  }
+  const representativeSlots = getRepresentativeSlotsForDay(dayIndex);
+  if (representativeSlots.length === 0) return { backgroundColor: '#f9f9f9', color: '#6c757d' };
   const colorStops = [];
   const slotCount = representativeSlots.length;
   const slotHeightPercent = 100 / slotCount;
   representativeSlots.forEach((slotTimeHHMM, index) => {
     const status = bulkWeekdaySlotSelections[dayIndex] && bulkWeekdaySlotSelections[dayIndex][slotTimeHHMM];
-    const color = statusToColor[status] || statusToColor.unselected; // Use unselected color if not set
+    const color = statusToColor[status] || statusToColor.unselected;
     const startPercent = index * slotHeightPercent;
     const endPercent = (index + 1) * slotHeightPercent;
     colorStops.push(`${color} ${startPercent}%`);
     colorStops.push(`${color} ${endPercent}%`);
   });
-  if (colorStops.length === 0) {
-    return { backgroundColor: '#f9f9f9', color: '#6c757d' }; // Default style if no slots
-  }
-  return {
-    background: `linear-gradient(to bottom, ${colorStops.join(', ')})`,
-    color: '#343a40', // Dark text for contrast
-  };
+  if (colorStops.length === 0) return { backgroundColor: '#f9f9f9', color: '#6c757d' };
+  return { background: `linear-gradient(to bottom, ${colorStops.join(', ')})`, color: '#343a40' };
 };
 
 const getDayStyle = (dayObject) => {
-  // dayObject is now the day object from calendarMonths, e.g., { date: 1, dateString: '2024-05-01', ... }
   if (!dayObject || !dayObject.dateString || !schedule.value) return {};
   const dateStr = dayObject.dateString;
-
-  // schedule.value is now an object where keys are date strings 'YYYY-MM-DD'
-  // and values are arrays of slot objects.
-  const slotsForDay = schedule.value[dateStr] 
-    ? [...schedule.value[dateStr]].sort((a, b) => new Date(a.originalStartTimeUTC).getTime() - new Date(b.originalStartTimeUTC).getTime()) 
-    : [];
-
-  if (slotsForDay.length === 0) {
-    // No slots for this day, return default style or style for non-event days
-    // This part depends on how you want to style days without slots but within the month view.
-    // For now, just return empty if no slots, or a specific style if it's not in the event range.
-    return !dayObject.isWithinEventRange && !dayObject.empty ? { backgroundColor: '#f9f9f9' } : {};
-  }
-
+  const slotsForDay = schedule.value[dateStr] ? [...schedule.value[dateStr]].sort((a, b) => new Date(a.originalStartTimeUTC).getTime() - new Date(b.originalStartTimeUTC).getTime()) : [];
+  if (slotsForDay.length === 0) return !dayObject.isWithinEventRange && !dayObject.empty ? { backgroundColor: '#f9f9f9' } : {};
   const colorStops = [];
   const slotCount = slotsForDay.length;
   const slotHeightPercent = 100 / slotCount;
-
   slotsForDay.forEach((slot, index) => {
     const status = userSelection[slot.originalStartTimeUTC] || 'unselected';
     const color = statusToColor[status] || statusToColor.unselected;
@@ -1257,722 +855,154 @@ const getDayStyle = (dayObject) => {
     colorStops.push(`${color} ${startPercent}%`);
     colorStops.push(`${color} ${endPercent}%`);
   });
-
   if (colorStops.length === 0) return {};
-
-  return {
-    background: `linear-gradient(to bottom, ${colorStops.join(', ')})`,
-  };
+  return { background: `linear-gradient(to bottom, ${colorStops.join(', ')})` };
 };
 
-// Helper function to get slot details by its UTC time string
 function getSlotByUtcTime(utcTime) {
-  if (!schedule.value || Object.keys(schedule.value).length === 0) {
-    return null;
-  }
+  if (!schedule.value || Object.keys(schedule.value).length === 0) return null;
   for (const dateKey in schedule.value) {
     const slotsOnDate = schedule.value[dateKey];
     if (Array.isArray(slotsOnDate)) {
-      // schedule.value[dateKey] stores slots with { time, status, originalStartTimeUTC }
-      // where status is directly from slot.vacancyType (e.g., 'FULL', 'MANY')
       const foundSlot = slotsOnDate.find(s => s.originalStartTimeUTC === utcTime);
-      if (foundSlot) {
-        return foundSlot; 
-      }
+      if (foundSlot) return foundSlot;
     }
   }
   return null;
 }
 
-// Helper function to check if a slot is sold out
 function isSlotSoldOut(slotUtcTime) {
   const slot = getSlotByUtcTime(slotUtcTime);
-  // Assuming slot.status directly holds the value like 'FULL', 'MANY', etc.
-  // from the backend's vacancyType.
-  return slot && slot.status === 'FULL'; 
+  return slot && slot.status === 'FULL';
 }
 
 </script>
 
 <style scoped>
-/* frontend/src/components/SchedulePage.vue の <style scoped> 内 */
-
-/* Apply border-box to all elements within this component for easier sizing */
 .schedule-page *, .schedule-page *::before, .schedule-page *::after {
   box-sizing: border-box;
 }
-
 .schedule-page {
   padding: 20px;
   max-width: 1200px;
   margin: 0 auto;
-  font-family: \'Segoe UI\', Tahoma, Geneva, Verdana, sans-serif;
-  background-color: #f9f9f9; /* Light gray background for the whole page */
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #f9f9f9;
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  font-family: 'Helvetica Neue', Arial, sans-serif;
 }
-
-.back-to-list-button {
-  background-color: #6c757d; /* Secondary button color */
-  color: white;
-  margin-top: 10px;
-  /* 必要に応じて他のスタイルを追加 */
-}
-
-.back-to-list-button:hover:not(:disabled) {
-  background-color: #5a6268;
-}
-
-
 .header-section {
   display: flex;
   flex-direction: column;
-  align-items: center; /* 中央揃えにする場合 */
+  align-items: center;
   margin-bottom: 20px;
-  text-align: center; /* テキストも中央揃えにする場合 */
+  text-align: center;
 }
-
-.event-title {
-  font-size: 2em;
-  margin-bottom: 0.5em;
-  color: #333;
-}
-
-.event-subtitle {
-  font-size: 1.1em;
-  margin-bottom: 1em;
-  color: #555;
-}
-
-.header-buttons {
-  display: flex;
-  gap: 10px; /* ボタン間のスペース */
-}
-
+.event-title { font-size: 2em; margin-bottom: 0.5em; color: #333; }
+.event-subtitle { font-size: 1.1em; margin-bottom: 1em; color: #555; }
+.header-buttons { display: flex; gap: 10px; }
 .controls-section {
   margin-bottom: 2rem;
-  padding: 1.5rem; /* Adjusted padding */
-  background-color: #ffffff;
-  border-radius: 8px; /* Standardized radius */
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05); /* Softer shadow */
-  border: 1px solid #dee2e6; /* Subtle border */
-}
-
-.input-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); /* Adjusted minmax */
-  gap: 1rem; /* Adjusted gap */
-  margin-bottom: 1rem;
-}
-
-.input-label {
-  display: block;
-  font-size: 0.8rem; /* Smaller label */
-  font-weight: 500;
-  color: #495057;
-  margin-bottom: 0.3rem; /* Reduced margin */
-}
-
-.input-field {
-  width: 100%;
-  padding: 0.65rem 0.8rem; /* Adjusted padding */
-  border: 1px solid #ced4da;
-  border-radius: 4px; /* Sharper radius */
-  box-shadow: inset 0 1px 1px rgba(0,0,0,0.03);
-  color: #495057;
-  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
-  font-size: 0.85rem;
-  background-color: #fff;
-}
-.input-field.display-only-input {
-  background-color: #e9ecef;
-  cursor: default;
-  color: #6c757d;
-}
-.input-field:focus {
-  border-color: #007bff;
-  outline: none;
-  border-color: #86b7fe; /* Bootstrap focus color */
-  box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
-}
-.date-input {
-  min-height: calc(0.65rem * 2 + 0.85rem + 2px);
-  appearance: none;
-}
-
-.fetch-button-container {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 1rem;
-}
-
-.button {
-  font-weight: 500;
-  padding: 0.6rem 1.2rem; /* Adjusted padding */
-  border-radius: 4px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-  transition: background-color 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease; /* Faster transform */
-  cursor: pointer;
-  border: 1px solid transparent;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.8rem; /* Smaller button text */
-  line-height: 1.5;
-  text-decoration: none;
-}
-.button:hover:not(:disabled) {
-  box-shadow: 0 2px 4px rgba(0,0,0,0.07);
-  transform: translateY(-1px);
-}
-
-.button-primary {
-  background-color: #4A90E2; /* Primary action color (e.g., blue) */
-  color: white;
-}
-
-.button-primary:hover {
-  background-color: #357ABD; /* Darker shade for hover */
-}
-
-.button-secondary {
-  background-color: #f0f0f0; /* Secondary action color (e.g., light gray) */
-  color: #333;
-  border: 1px solid #ccc;
-}
-
-.button-secondary:hover {
-  background-color: #e0e0e0;
-}
-
-.primary-button {
-  background-color: #0d6efd; /* Bootstrap primary */
-  color: #ffffff;
-  border-color: #0d6efd;
-}
-.primary-button:hover:not(:disabled) {
-  background-color: #0b5ed7;
-  border-color: #0a58ca;
-}
-.primary-button:focus-visible {
-  box-shadow: 0 0 0 0.2rem rgba(49,132,253,.5);
-}
-
-.loading-spinner {
-  animation: spin 0.75s linear infinite;
-  margin-right: 0.5em;
-  height: 1em;
-  width: 1em;
-}
-
-.error-message {
-  margin-top: 0.75rem;
-  color: #b02a37; /* Darker, less saturated red */
-  font-size: 0.8rem;
-  font-weight: 500;
-  text-align: right;
-}
-
-.schedule-display-section {
+  padding: 1.5rem;
   background-color: #ffffff;
   border-radius: 8px;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
   border: 1px solid #dee2e6;
-  padding: 1rem; /* 1.5rem から変更 */
-  margin-top: 1.5rem; /* 2rem から変更 */
 }
-
-.section-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  margin-bottom: 0.5rem; /* 1rem から変更 */
-  color: #343a40;
-  border-bottom: 1px solid #e9ecef;
-  padding-bottom: 0.5rem; /* 0.75rem から変更 */
+.input-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
 }
-
-.schedule-scroll-container {
-  overflow-y: auto; /* 日付リストが縦に長い場合にスクロール */
-  overflow-x: hidden; /* 横スクロールは各行で制御するのでここでは隠す */
+.input-label { display: block; font-size: 0.8rem; font-weight: 500; color: #495057; margin-bottom: 0.3rem; }
+.input-field {
   width: 100%;
-  max-height: 70vh; /* 例: ビューポートの高さの70%に制限 */
-}
-
-.schedule-grid {
-  display: flex;
-  flex-direction: column; /* 日付を縦に並べる */
-  padding-bottom: 2px; /* 4px から変更 */
-}
-
-.date-column {
-  display: flex;
-  flex-direction: column; /* 日付ヘッダーとスロットリストを縦積みにする */
-  align-items: stretch; /* 幅を親要素に合わせる */
-  border-bottom: 1px solid #eee;
-  padding: 5px 0; /* 10px 0 から変更 */
-}
-
-.date-header {
-  min-width: auto; /* 最小幅を解除 */
-  width: 100%;    /* 幅を100%にする */
-  padding:  5px; /* 10px から変更 */
-  font-weight: bold;
-  text-align: left; 
-  padding-bottom: 3px; /* 5px から変更 */
-  border-bottom: 1px solid #f0f0f0; 
-  margin-bottom: 5px; /* 10px から変更 */
-}
-
-.slot-list {
-  list-style: none;
-  padding: 0;
-  margin-top: 10px;
-}
-
-.slot-item {
-  background-color: #fff;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  padding: 10px 15px;
-  margin-bottom: 10px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-}
-
-.slot-info {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px; /* セレクタとの間隔 */
-  font-size: 0.95em;
-}
-
-.slot-time {
-  font-weight: bold;
-  color: #333;
-}
-
-.slot-availability {
-  font-size: 0.85em;
-  padding: 3px 8px;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid #ced4da;
   border-radius: 4px;
-  color: #fff;
+  box-shadow: inset 0 1px 1px rgba(0,0,0,0.03);
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  font-size: 0.85rem;
+  background-color: #fff;
 }
-
-/* ... existing status-available, etc. styles ... */
+.input-field.display-only-input { background-color: #e9ecef; cursor: default; color: #6c757d; }
+.input-field:focus { border-color: #86b7fe; outline: none; box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25); }
+.button { font-weight: 500; padding: 0.6rem 1.2rem; border-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: all 0.15s ease; cursor: pointer; border: 1px solid transparent; display: inline-flex; align-items: center; justify-content: center; font-size: 0.8rem; line-height: 1.5; text-decoration: none; }
+.button:hover:not(:disabled) { box-shadow: 0 2px 4px rgba(0,0,0,0.07); transform: translateY(-1px); }
+.button-primary { background-color: #4A90E2; color: white; }
+.button-primary:hover { background-color: #357ABD; }
+.button-secondary { background-color: #f0f0f0; color: #333; border: 1px solid #ccc; }
+.button-secondary:hover { background-color: #e0e0e0; }
+.loading-spinner { animation: spin 0.75s linear infinite; margin-right: 0.5em; height: 1em; width: 1em; }
+.error-message { margin-top: 0.75rem; color: #b02a37; font-size: 0.8rem; font-weight: 500; text-align: right; }
+.schedule-display-section { background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05); border: 1px solid #dee2e6; padding: 1rem; margin-top: 1.5rem; }
+.section-title { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; color: #343a40; border-bottom: 1px solid #e9ecef; padding-bottom: 0.5rem; }
+.slot-list { list-style: none; padding: 0; margin-top: 10px; }
+.slot-item { background-color: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 10px 15px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+.slot-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 0.95em; }
+.slot-time { font-weight: bold; color: #333; }
+.slot-availability { font-size: 0.85em; padding: 3px 8px; border-radius: 4px; color: #fff; }
 .status-available { background-color: #4CAF50; }
-.status-few-tickets-left { background-color: #FFC107; color: #000 !important; } /* 文字色を黒に */
+.status-few-tickets-left { background-color: #FFC107; color: #000 !important; }
 .status-sold-out { background-color: #F44336; }
-.status-sales-ended { background-color: #757575; }
 .status-on-sale-soon { background-color: #2196F3; }
-.status-unknown { background-color: #9E9E9E; }
-
-
-/* New styles for user-status-selector */
-.user-status-selector {
-  padding: 10px;
-  border-radius: 5px;
-  text-align: center;
-  cursor: pointer;
-  user-select: none;
-  transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out, border-color 0.2s ease-in-out;
-  font-weight: 500;
-  border: 2px solid transparent; /* 枠線用にスペースを確保 */
-}
-
-.user-status-selector.status-undefined {
-  background-color: #f0f0f0;
-  color: #555;
-  border: 2px dashed #ccc;
-}
-.user-status-selector.status-undefined:hover {
-  background-color: #e0e0e0;
-  border-color: #bbb;
-}
-
-.user-status-selector.status-going {
-  background-color: #4CAF50; /* 緑 */
-  color: white;
-  border-color: #388E3C;
-}
-.user-status-selector.status-going:hover {
-  background-color: #45a049;
-}
-
-.user-status-selector.status-maybe {
-  background-color: #FFC107; /* 黄色 */
-  color: black;
-  border-color: #FFA000;
-}
-.user-status-selector.status-maybe:hover {
-  background-color: #ffb300;
-}
-
-.user-status-selector.status-not-going {
-  background-color: #F44336; /* 赤 */
-  color: white;
-  border-color: #D32F2F;
-}
-.user-status-selector.status-not-going:hover {
-  background-color: #e53935;
-}
-
-.user-status-selector.clickable:focus {
-  outline: 2px solid #007bff;
-  outline-offset: 2px;
-}
-
-
-/* ... other existing styles ... */
-.save-button-container {
-  margin-top: 25px;
-  text-align: center;
-}
-
-.save-selections-button {
-  padding: 12px 25px;
-  font-size: 1.1em;
-}
-
-.save-message {
-  margin-top: 10px;
-  font-size: 0.9em;
-}
-.save-message-success {
-  color: green;
-}
-.save-message-error {
-  color: red;
-}
-
-.no-data-message, .loading-initial-message {
-  text-align: center;
-  padding: 20px;
-  font-size: 1.1em;
-  color: #555;
-}
-
-.error-message {
-  color: #D32F2F; /* 赤色 */
-  background-color: #FFCDD2; /* 薄い赤背景 */
-  border: 1px solid #F44336;
-  padding: 10px 15px;
-  border-radius: 4px;
-  margin-top: 15px;
-  text-align: center;
-}
-
-/* Bulk action button styling */
-.weekday-bulk-actions-container, .date-bulk-actions {
-  margin-bottom: 15px;
-  padding: 10px;
-  background-color: #f0f4f8;
- 
-  border-radius: 6px;
-}
-.bulk-actions-title, .weekday-label {
-  margin-right: 8px;
-  font-weight: 500;
-  color: black;
-}
-.weekday-bulk-action-group {
-  display: flex;
-  align-items: center;
-  margin-bottom: 5px;
-}
-.bulk-action-button {
-  margin-right: 5px;
-  padding: 6px 10px;
-  font-size: 0.9em;
-  border: 1px solid transparent;
-}
-.bulk-action-button.active {
-  border-width: 2px;
-  box-shadow: 0 0 5px rgba(0,0,0,0.2);
-}
-/* .bulk-going.active, .bulk-maybe.active, .bulk-not-going.active は古いUI用なので削除またはコメントアウト */
-/* .bulk-going.active { border-color: #4CAF50; background-color: #e8f5e9; color: #2e7d32;} */
-/* .bulk-maybe.active { border-color: #FFC107; background-color: #fff8e1; color: #e65100;} */
-/* .bulk-not-going.active { border-color: #F44336; background-color: #ffebee; color: #c62828;} */
-
-/* New styles for detailed weekday bulk actions */
-.weekday-bulk-item {
-  margin-bottom: 10px;
-  padding: 10px;
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
-  background-color: #fff;
-}
-
-.weekday-bulk-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  /* margin-bottom: 8px; Removed to avoid jump when details open/close */
-}
-
-.weekday-bulk-header .weekday-label {
-  font-weight: bold;
-}
-
-.button.small-button { /* For "詳細設定" / "閉じる" buttons */
-  padding: 4px 8px;
-  font-size: 0.8em;
-}
-
-.weekday-bulk-details { /* アコーディオン用だったので、モーダル用に変更または新しいクラス作成 */
-  margin-top: 10px; 
-  padding-top: 10px;
-  border-top: 1px solid #eee;
-}
-/* New class for modal context if needed, or adapt existing */
-.weekday-bulk-details-modal {
-  margin-top: 15px; /* Spacing from modal title */
-  /* padding-bottom: 15px; */ /* Apply button is now outside the list, so this might not be needed here */
-}
-
-/* .bulk-slot-setting and .modal-bulk-slot-setting might be less relevant now or can be removed if .slot-item structure is fully adopted */
-.bulk-slot-setting {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-  padding: 5px 0;
-}
-
-/* .bulk-slot-time might be replaced by .slot-time if styles are compatible */
-.bulk-slot-time {
-  font-size: 0.9em;
-  color: #333;
-  margin-right: 10px;
-}
-
-.apply-bulk-weekday-button {
-  margin-top: 10px;
-  width: 100%; /* Make button full width of its container */
-  padding: 8px 12px;
-  font-size: 0.9em;
-}
-.modal-apply-button { /* Specific styling for apply button in modal */
-  margin-top: 20px; /* Increased margin from the list */
-
-  padding: 10px 15px; 
-}
-
-.no-representative-slots-message {
-  font-size: 0.85em;
-  color: #777;
-  padding: 5px 0;
-  text-align: center;
-}
-
-
-/* Visually hidden class (if needed elsewhere, though radio buttons are removed) */
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  border: 0;
-}
-
-/* Calendar Styles */
-.calendar-view-container {
-  margin-top: 20px;
-  padding: 10px;
-  background-color: #fff;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-.calendar-month {
-  margin-bottom: 20px;
-}
-
-.calendar-month-title {
-  font-size: 1.4em;
-  text-align: center;
-  margin-bottom: 15px;
-  color: #333;
-  font-weight: 600;
-}
-
-.calendar-table {
-  width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
-}
-
-.calendar-table th,
-.calendar-table td {
-  border: 1px solid black;
-  padding: 0;
-  text-align: center;
-  vertical-align: top;
-  height: 90px;
-}
-
-.calendar-table th {
-  background-color: #f8f9fa;
-  font-weight: 500;
-  color: #495057;
-  padding: 10px 0;
-  font-size: 0.85em;
-  height: auto;
-}
-
-.calendar-table th.clickable-header {
-  cursor: pointer;
-  transition: background-color 0.2s ease;
-}
-
-.calendar-table th.clickable-header:hover {
-  background-color: #e9ecef;
-}
-
-.calendar-table th.clickable-header.active-header {
-  background-color: #cfe2ff; /* Bootstrap primary-bg-subtle like color */
-  color: #0a58ca; /* Darker blue for text */
-  font-weight: bold;
-}
-
-.calendar-day-cell {
-  cursor: default;
-  padding: 5px; /* Add padding inside td */
-  position: relative; /* For positioning the day number span if needed */
-  /* Ensure day number is visible over the gradient */
-  transition: transform 0.15s ease-out, box-shadow 0.15s ease-out; /* Added transition for hover effect */
-}
-
-.calendar-day-cell.has-slots { /* This class is already applied when day.isClickable is true */
-  cursor: pointer;
-}
-
-.calendar-day-cell.not-in-event-range {
-  background-color: #e0e0e0; /* より暗い灰色に変更 */
-  color: #a0a0a0; /* テキスト色も調整 */
-}
-.calendar-day-cell.not-in-event-range .day-number {
-  color: #a0a0a0; /* 日付の数字も同様に調整 */
-}
-
-.empty-cell {
-  background-color: #fdfdfd;
-  border: 1px solid #eee;
-}
-
-.day-number {
-  position: relative; /* Ensure it stacks correctly if other elements are absolutely positioned */
-  z-index: 1; /* Ensure number is above the gradient background */
-
-  padding: 2px 4px;
-  background-color: rgba(255, 255, 255, 0.75); /* Semi-transparent background for readability */
-  border-radius: 3px;
-  font-size: 1em; /* フォントサイズを 1em に戻す (style属性で設定したため) */
-  display: inline-block; /* To allow padding and background */
-  color: #000000; /* Set text color to black */
-}
-
-.today .day-number {
-  font-weight: bold;
-  color: #000000; /* Set text color to black for today as well */
-  border:  1px solid #000000; /* Optional: make border black or a contrasting color */
-  /* background-color: rgba(255, 255, 255, 0.85); */ /* Slightly more opaque for today if needed */
-}
-
-/* Modal Styles */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.6);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-  padding: 15px; /* Padding for smaller screens */
-}
-
-.modal-content {
-  background-color: #fff;
-  padding: 20px 25px 25px 25px; /* Adjusted padding */
-  border-radius: 8px;
-  box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-  width: 100%; /* Responsive width */
-  max-width: 550px; /* Max width for the modal */
-  max-height: 90vh; /* Max height */
-  overflow-y: auto; 
-  position: relative;
-}
-
-.modal-close-button {
-  position: absolute;
-  top: 12px;
-  right: 15px;
-  background: none;
-  border: none;
-  font-size: 1.8rem;
-  line-height: 1;
-  cursor: pointer;
-  color: #888;
-  padding: 5px;
-}
-.modal-close-button:hover {
-  color: #333;
-}
-
-.modal-title {
-  margin-top: 0;
-  margin-bottom: 20px;
-  font-size: 1.4rem; /* Adjusted size */
-  color: #333;
-  text-align: center;
-  font-weight: 600;
-}
-
-.modal-bulk-actions {
-  margin-bottom: 20px;
-  padding-bottom: 15px;
-  border-bottom: 1px solid #eee;
-  display: flex;
-  justify-content: center;
-  gap: 10px; /* Space between buttons */
-}
-
-.modal-slot-list {
-  padding-left: 0; 
-  list-style: none;
-}
-
-.modal-content .slot-item {
-  margin-bottom: 12px; /* Increased margin for better separation */
-  padding: 12px 15px; /* Slightly more padding */
-}
-
-.modal-no-events {
-  text-align: center;
-  color: #555;
-  padding: 15px 0;
-}
-
-/* Ensure save button container is not affected by modal overlay */
-.save-button-container {
-  position: relative; /* Or z-index if needed, but should be fine if modal is fixed */
-  z-index: 1; /* Lower than modal overlay */
-}
-
-.calendar-day-cell.no-slots-in-range-diagonal {
-  background-image: linear-gradient(to right bottom, transparent 49.5%, rgb(219, 219, 219) 49.5%, rgb(219, 219, 219) 50.5%, transparent 50.5%);
-}
-
-.disabled-slot {
-  background-color: #e0e0e0; /* 例: グレーアウト */
-  cursor: not-allowed;
-  opacity: 0.7;
+.user-status-selector { padding: 10px; border-radius: 5px; text-align: center; cursor: pointer; user-select: none; transition: all 0.2s ease-in-out; font-weight: 500; border: 2px solid transparent; }
+.user-status-selector.status-undefined { background-color: #f0f0f0; color: #555; border: 2px dashed #ccc; }
+.user-status-selector.status-undefined:hover { background-color: #e0e0e0; border-color: #bbb; }
+.user-status-selector.status-going { background-color: #4CAF50; color: white; border-color: #388E3C; }
+.user-status-selector.status-going:hover { background-color: #45a049; }
+.user-status-selector.status-maybe { background-color: #FFC107; color: black; border-color: #FFA000; }
+.user-status-selector.status-maybe:hover { background-color: #ffb300; }
+.user-status-selector.status-not-going { background-color: #F44336; color: white; border-color: #D32F2F; }
+.user-status-selector.status-not-going:hover { background-color: #e53935; }
+.user-status-selector.clickable:focus { outline: 2px solid #007bff; outline-offset: 2px; }
+.save-button-container { margin-top: 25px; text-align: center; }
+.save-selections-button { padding: 12px 25px; font-size: 1.1em; }
+.save-message { margin-top: 10px; font-size: 0.9em; }
+.save-message-success { color: green; }
+.save-message-error { color: red; }
+.no-data-message, .loading-initial-message { text-align: center; padding: 20px; font-size: 1.1em; color: #555; }
+.date-bulk-actions { margin-bottom: 15px; padding: 10px; background-color: #f0f4f8; border-radius: 6px; }
+.bulk-action-button { margin-right: 5px; padding: 6px 10px; font-size: 0.9em; border: 1px solid transparent; }
+.bulk-action-button.active { border-width: 2px; box-shadow: 0 0 5px rgba(0,0,0,0.2); }
+.calendar-view-container { margin-top: 20px; padding: 10px; background-color: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+.calendar-month { margin-bottom: 20px; }
+.calendar-month-title { font-size: 1.4em; text-align: center; margin-bottom: 15px; color: #333; font-weight: 600; }
+.calendar-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.calendar-table th, .calendar-table td { border: 1px solid black; padding: 0; text-align: center; vertical-align: top; height: 90px; }
+.calendar-table th { background-color: #f8f9fa; font-weight: 500; color: #495057; padding: 10px 0; font-size: 0.85em; height: auto; }
+.calendar-table th.clickable-header { cursor: pointer; transition: background-color 0.2s ease; }
+.calendar-table th.clickable-header:hover { background-color: #e9ecef; }
+.calendar-table th.clickable-header.active-header { background-color: #cfe2ff; color: #0a58ca; font-weight: bold; }
+.calendar-day-cell { cursor: default; padding: 5px; position: relative; transition: all 0.15s ease-out; }
+.calendar-day-cell.has-slots { cursor: pointer; }
+.calendar-day-cell.not-in-event-range { background-color: #e0e0e0; color: #a0a0a0; }
+.calendar-day-cell.not-in-event-range .day-number { color: #a0a0a0; }
+.empty-cell { background-color: #fdfdfd; border: 1px solid #eee; }
+.day-number { position: relative; z-index: 1; padding: 2px 4px; background-color: rgba(255, 255, 255, 0.75); border-radius: 3px; display: inline-block; color: #000; }
+.today .day-number { font-weight: bold; color: #000; border: 1px solid #000; }
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 15px; }
+.modal-content { background-color: #fff; padding: 20px 25px; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); width: 100%; max-width: 800px; max-height: 90vh; overflow-y: auto; position: relative; }
+.modal-close-button { position: absolute; top: 12px; right: 15px; background: none; border: none; font-size: 1.8rem; line-height: 1; cursor: pointer; color: #888; }
+.modal-close-button:hover { color: #333; }
+.modal-title { margin-top: 0; margin-bottom: 20px; font-size: 1.4rem; color: #333; text-align: center; font-weight: 600; }
+.modal-bulk-actions { margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #eee; display: flex; justify-content: center; gap: 10px; }
+.modal-slot-list { padding-left: 0; list-style: none; }
+.modal-content .slot-item { margin-bottom: 12px; padding: 12px 15px; }
+.modal-no-events { text-align: center; color: #555; padding: 15px 0; }
+.disabled-slot { background-color: #e0e0e0; cursor: not-allowed; opacity: 0.7; }
+.date-modal-layout { display: flex; flex-direction: row; gap: 20px; }
+.event-slots-container { flex: 2; min-width: 0; }
+.personal-calendar-container { flex: 1; min-width: 0; border-left: 1px solid #e9ecef; padding-left: 20px; }
+.personal-calendar-title { font-size: 1.1em; font-weight: 600; margin-bottom: 15px; color: #343a40; }
+.personal-schedule-list { list-style: none; padding: 0; margin: 0; }
+.personal-schedule-item { background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 10px; margin-bottom: 10px; }
+.personal-schedule-title { font-weight: bold; display: block; margin-bottom: 5px; color: #212529; }
+.personal-schedule-time { font-size: 0.9em; color: #495057; }
+.personal-calendar-container .no-events-message { font-size: 0.9em; color: #6c757d; padding-top: 10px; }
+@media (max-width: 768px) {
+  .date-modal-layout { flex-direction: column; }
+  .personal-calendar-container { border-left: none; border-top: 1px solid #e9ecef; padding-left: 0; padding-top: 20px; margin-top: 20px; }
 }
 </style>

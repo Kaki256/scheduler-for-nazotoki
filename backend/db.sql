@@ -26,3 +26,26 @@ CREATE TABLE IF NOT EXISTS user_event_selections (
     UNIQUE KEY unique_user_event (username, event_url),
     FOREIGN KEY (event_url) REFERENCES events(event_url)
 );
+
+-- ユーザー個人のスケジュールを格納するテーブル
+CREATE TABLE IF NOT EXISTS user_schedules (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(64) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    start_datetime DATETIME NOT NULL,
+    end_datetime DATETIME NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL,
+    INDEX idx_user_datetime (username, start_datetime, end_datetime)
+);
+
+-- Google認証情報を格納するテーブル
+CREATE TABLE IF NOT EXISTS user_google_auth (
+    username VARCHAR(64) PRIMARY KEY,
+    access_token TEXT NOT NULL,
+    refresh_token TEXT NOT NULL,
+    expiry_date BIGINT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);

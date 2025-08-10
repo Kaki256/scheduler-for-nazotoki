@@ -2,6 +2,8 @@ import { createRouter, createWebHistory } from 'vue-router';
 import EventListPage from '../components/EventListPage.vue';
 import SchedulePage from '../components/SchedulePage.vue';
 import EventFormPage from '../components/EventFormPage.vue';
+import EventSummaryPage from '../components/EventSummaryPage.vue';
+import MyCalendarPage from '../components/MyCalendarPage.vue'; // 追加
 
 const routes = [
   {
@@ -37,11 +39,15 @@ const routes = [
   },
   {
     path: '/summary/:orgSlug/:eventSlug',
-    name: 'EventSummary', // EventSummaryPage.vue で使用されている名前に合わせる
-    component: () => import('../components/EventSummaryPage.vue'), 
+    name: 'EventSummary',
+    component: EventSummaryPage, 
     props: true
+  },
+  {
+    path: '/my-calendar',
+    name: 'MyCalendar',
+    component: MyCalendarPage,
   }
-  // ★ END: イベント作成・編集ルート ★
 ];
 
 const router = createRouter({

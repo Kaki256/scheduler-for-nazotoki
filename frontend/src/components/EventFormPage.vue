@@ -14,7 +14,7 @@
               type="url"
               id="eventUrl"
               v-model="event.eventUrl"
-              placeholder="例: https://escape.id/org/tumbleweed/event/yawfwel/"
+              placeholder="例: https://escape.id/tumbleweed-org/e-yawfwel/"
               class="form-input flex-grow"
               :disabled="mode === 'edit'"
               required
@@ -103,6 +103,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
+import axios from 'axios';
 
 const props = defineProps({
   mode: {
@@ -211,6 +212,41 @@ async function fetchEventDataFromUrl() {
     
     const astroIslandElement = doc.querySelector('astro-island[component-export="EventInitializer"]');
     if (!astroIslandElement) {
+      // Fallback for Yodaka event pages
+      if (event.eventUrl.includes('yodaka.info')) {
+        // Extract LivePocket ticket URL
+        const scheduleSection = doc.getElementById('schedule');
+        if (scheduleSection) {
+          const linkEl = scheduleSection.querySelector('a[href^="/e/"]');
+          if (linkEl) {
+            event.eventUrl = 'https://t.livepocket.jp' + linkEl.getAttribute('href');
+            console.log('ライブポケットイベントURLをセット:', event.eventUrl);
+          }
+        }
+        // Set event name as page title
+        const titleEl = doc.querySelector('h1') || doc.querySelector('title');
+        event.name = titleEl?.textContent.trim() || '';
+        // Fetch schedule dates from backend for LivePocket URL
+        try {
+          const resp = await axios.post(`${API_BASE_URL}/get-schedule`, {
+            event_url: event.eventUrl,
+            date_from: '1970-01-01',
+            date_to: '2099-12-31',
+            location_uid: null,
+          });
+          const dates = resp.data.dates;
+          if (dates && dates.length) {
+            // Sort by date
+            dates.sort((a, b) => new Date(a.date) - new Date(b.date));
+            // Treat dates as JST date strings
+            event.startDate = dates[0].date;
+            event.endDate = dates[dates.length - 1].date;
+          }
+        } catch (e) {
+          console.warn('Yodakaスケジュール取得エラー:', e);
+        }
+        return;
+      }
       throw new Error('EventInitializerコンポーネントが見つかりませんでした。');
     }
 
@@ -417,7 +453,12 @@ async function fetchEventDetails() {
     errorMessage.value = '';
     try {
       // Reconstruct the event URL from slugs, ensuring it ends with a slash
-      const reconstructedEventUrl = `https://escape.id/org/${props.orgSlugProp}/event/${props.eventSlugProp}/`;
+      let reconstructedEventUrl = ``;
+      if (props.prgSlugProp === 'Yodaka') {
+        reconstructedEventUrl = `https://yodaka.info/${props.eventSlugProp}/`;
+      } else {
+        reconstructedEventUrl = `https://escape.id/${props.orgSlugProp}-org/e-${props.eventSlugProp}/`;
+      }
       console.log('[EventFormPage] Reconstructed event URL for fetching details:', reconstructedEventUrl);
       
       const response = await fetch(`${API_BASE_URL}/events/${encodeURIComponent(reconstructedEventUrl)}`);

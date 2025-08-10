@@ -8,14 +8,34 @@ const mysql = require('mysql2/promise');
 const fetch = require('node-fetch');
 const fs = require('fs');
 const path = require('path');
+const cheerio = require('cheerio');
+const { google } = require('googleapis');
+require('dotenv').config();
+
+// Environment variable check
+const requiredEnvVars = [
+  'NS_MARIADB_HOSTNAME',
+  'NS_MARIADB_USER',
+  'NS_MARIADB_PASSWORD',
+  'NS_MARIADB_DATABASE',
+  'GOOGLE_CLIENT_ID',
+  'GOOGLE_CLIENT_SECRET'
+];
+
+for (const varName of requiredEnvVars) {
+  if (!process.env[varName]) {
+    console.error(`[Error] Environment variable ${varName} is not set.`);
+    process.exit(1);
+  }
+}
 
 const app = express();
 
 const dbPool = mysql.createPool({
-  host: process.env.NS_MARIADB_HOSTNAME || 'localhost',
-  user: process.env.NS_MARIADB_USER || 'scheduler_app_user',
-  password: process.env.NS_MARIADB_PASSWORD || 'password',
-  database: process.env.NS_MARIADB_DATABASE || 'schedule_app_db',
+  host: process.env.NS_MARIADB_HOSTNAME,
+  user: process.env.NS_MARIADB_USER,
+  password: process.env.NS_MARIADB_PASSWORD,
+  database: process.env.NS_MARIADB_DATABASE,
   port: process.env.NS_MARIADB_PORT || 3306,
   waitForConnections: true,
   connectionLimit: 10,
@@ -28,10 +48,10 @@ const PORT = process.env.PORT || 3001;
 // Database setup function
 async function setupDatabase() {
   const dbConfig = {
-    host: process.env.NS_MARIADB_HOSTNAME || 'localhost',
-    user: process.env.NS_MARIADB_USER || 'scheduler_app_user',
-    password: process.env.NS_MARIADB_PASSWORD || 'password',
-    database: process.env.NS_MARIADB_DATABASE || 'schedule_app_db',
+    host: process.env.NS_MARIADB_HOSTNAME,
+    user: process.env.NS_MARIADB_USER,
+    password: process.env.NS_MARIADB_PASSWORD,
+    database: process.env.NS_MARIADB_DATABASE,
     port: process.env.NS_MARIADB_PORT || 3306,
     multipleStatements: true
   };
@@ -95,7 +115,7 @@ async function startServer() {
     // データベースセットアップ成功後にExpressサーバーを起動
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
-      console.log(`Database for API (dbPool) is targeting: ${process.env.NS_MARIADB_DATABASE || 'schedule_app_db'}`);
+      console.log(`Database for API (dbPool) is targeting: ${process.env.NS_MARIADB_DATABASE}`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);
@@ -120,6 +140,65 @@ app.use((req, res, next) => {
 
   next();
 });
+
+// ★★★ START: Google Auth API Endpoints ★★★
+
+const isProduction = process.env.NODE_ENV === 'production';
+const BACKEND_BASE_URL = isProduction ? 'https://nazotoki-scheduler.trap.show' : `http://localhost:${PORT}`;
+const FRONTEND_BASE_URL = isProduction ? 'https://nazotoki-scheduler.trap.show' : 'http://localhost:5173';
+
+const oauth2Client = new google.auth.OAuth2(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  `${BACKEND_BASE_URL}/api/auth/google/callback`
+);
+
+app.get('/api/auth/google', (req, res) => {
+  const username = req._constructedUsername;
+  if (!username) {
+    return res.status(401).json({ error: '認証が必要です。' });
+  }
+
+  const scopes = [
+    'https://www.googleapis.com/auth/calendar.readonly'
+  ];
+
+  const authorizationUrl = oauth2Client.generateAuthUrl({
+    access_type: 'offline',
+    scope: scopes,
+    include_granted_scopes: true,
+    state: username // Pass username through state
+  });
+
+  res.json({ authorizationUrl });
+});
+
+app.get('/api/auth/google/callback', async (req, res) => {
+  const { code, state } = req.query;
+  const username = state;
+
+  try {
+    const { tokens } = await oauth2Client.getToken(code);
+    oauth2Client.setCredentials(tokens);
+
+    const { access_token, refresh_token, expiry_date } = tokens;
+
+    const upsertQuery = `
+      INSERT INTO user_google_auth (username, access_token, refresh_token, expiry_date)
+      VALUES (?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE access_token = ?, refresh_token = ?, expiry_date = ?
+    `;
+    await dbPool.execute(upsertQuery, [username, access_token, refresh_token || '', expiry_date, access_token, refresh_token || '', expiry_date]);
+
+    // Redirect user back to the frontend My Calendar page
+    res.redirect(`${FRONTEND_BASE_URL}/my-calendar?google_auth=success`);
+  } catch (error) {
+    console.error('Error during Google OAuth callback:', error);
+    res.redirect(`${FRONTEND_BASE_URL}/my-calendar?google_auth=error`);
+  }
+});
+
+// ★★★ END: Google Auth API Endpoints ★★★
 
 function normalizeEventUrl(urlString) {
   try {
@@ -581,6 +660,10 @@ app.get('/api/events/:eventUrlEncoded/summary', async (req, res) => {
     return res.status(400).json({ error: 'Invalid event URL encoding.' });
   }
 
+  // Normalize event URL to canonical form (add trailing slash, remove query/hash)
+  eventUrl = normalizeEventUrl(eventUrl);
+  console.log(`[SummaryAPI] Normalized eventUrl for lookup: ${eventUrl}`);
+  
   let connection;
   try {
     connection = await dbPool.getConnection();
@@ -607,10 +690,9 @@ app.get('/api/events/:eventUrlEncoded/summary', async (req, res) => {
     const locationName = eventDetails.location_name;    // 追加
     const locationAddress = eventDetails.location_address; // 追加
 
-    if (!eventStartDate || !eventEndDate || !locationUid) {
-        console.warn(`[SummaryAPI] Event data incomplete for ${eventUrl}. Start: ${eventStartDate}, End: ${eventEndDate}, Location: ${locationUid}`);
-        // 必要な情報が欠けている場合はエラー
-        return res.status(404).json({ error: 'イベントの日付または場所情報が不足しており、集計を生成できません。' });
+    if (!eventStartDate || !eventEndDate) {
+        console.warn(`[SummaryAPI] Event date incomplete for ${eventUrl}. Start: ${eventStartDate}, End: ${eventEndDate}`);
+        return res.status(404).json({ error: 'イベントの日付情報が不足しており、集計を生成できません。' });
     }
 
     // 2. 外部APIからイベントの全日時スロットを取得
@@ -731,6 +813,194 @@ function extractEventNameFromUrl(url) {
 
 // ★★★ END: User Event Selections API Endpoints ★★★
 
+// ★★★ START: My Calendar API Endpoints ★★★
+
+// GET all personal schedule events for the logged-in user
+app.get('/api/my-calendar', async (req, res) => {
+  const username = req._constructedUsername;
+  if (!username) {
+    return res.status(401).json({ error: '認証が必要です。' });
+  }
+
+  try {
+    const [rows] = await dbPool.execute(
+      'SELECT id, title, start_datetime, end_datetime FROM user_schedules WHERE username = ? AND deleted_at IS NULL ORDER BY start_datetime ASC',
+      [username]
+    );
+    res.json(rows);
+  } catch (dbError) {
+    console.error('DB Error fetching personal schedules:', dbError);
+    res.status(500).json({ error: '個人のスケジュール取得中にエラーが発生しました。' });
+  }
+});
+
+// POST a new personal schedule event
+app.post('/api/my-calendar', async (req, res) => {
+  const username = req._constructedUsername;
+  if (!username) {
+    return res.status(401).json({ error: '認証が必要です。' });
+  }
+
+  const { title, start_datetime, end_datetime } = req.body;
+  if (!title || !start_datetime || !end_datetime) {
+    return res.status(400).json({ error: 'タイトル、開始日時、終了日時は必須です。' });
+  }
+  if (new Date(start_datetime) >= new Date(end_datetime)) {
+    return res.status(400).json({ error: '終了日時は開始日時より後に設定してください。' });
+  }
+
+  try {
+    const [result] = await dbPool.execute(
+      'INSERT INTO user_schedules (username, title, start_datetime, end_datetime) VALUES (?, ?, ?, ?)',
+      [username, title, start_datetime, end_datetime]
+    );
+    const insertId = result.insertId;
+    const [rows] = await dbPool.execute('SELECT id, title, start_datetime, end_datetime FROM user_schedules WHERE id = ?', [insertId]);
+    res.status(201).json(rows[0]);
+  } catch (dbError) {
+    console.error('DB Error creating personal schedule:', dbError);
+    res.status(500).json({ error: '個人のスケジュール登録中にエラーが発生しました。' });
+  }
+});
+
+// PUT (update) an existing personal schedule event
+app.put('/api/my-calendar/:scheduleId', async (req, res) => {
+  const username = req._constructedUsername;
+  if (!username) {
+    return res.status(401).json({ error: '認証が必要です。' });
+  }
+
+  const { scheduleId } = req.params;
+  const { title, start_datetime, end_datetime } = req.body;
+
+  if (!title || !start_datetime || !end_datetime) {
+    return res.status(400).json({ error: 'タイトル、開始日時、終了日時は必須です。' });
+  }
+  if (new Date(start_datetime) >= new Date(end_datetime)) {
+    return res.status(400).json({ error: '終了日時は開始日時より後に設定してください。' });
+  }
+
+  try {
+    const [result] = await dbPool.execute(
+      'UPDATE user_schedules SET title = ?, start_datetime = ?, end_datetime = ? WHERE id = ? AND username = ? AND deleted_at IS NULL',
+      [title, start_datetime, end_datetime, scheduleId, username]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: '更新対象のスケジュールが見つからないか、権限がありません。' });
+    }
+
+    const [rows] = await dbPool.execute('SELECT id, title, start_datetime, end_datetime FROM user_schedules WHERE id = ?', [scheduleId]);
+    res.json(rows[0]);
+  } catch (dbError) {
+    console.error('DB Error updating personal schedule:', dbError);
+    res.status(500).json({ error: '個人のスケジュール更新中にエラーが発生しました。' });
+  }
+});
+
+// DELETE a personal schedule event (logically)
+app.delete('/api/my-calendar/:scheduleId', async (req, res) => {
+  const username = req._constructedUsername;
+  if (!username) {
+    return res.status(401).json({ error: '認証が必要です。' });
+  }
+
+  const { scheduleId } = req.params;
+
+  try {
+    const [result] = await dbPool.execute(
+      'UPDATE user_schedules SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND username = ? AND deleted_at IS NULL',
+      [scheduleId, username]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: '削除対象のスケジュールが見つからないか、権限がありません。' });
+    }
+
+    res.status(204).send(); // No Content
+  } catch (dbError) {
+    console.error('DB Error deleting personal schedule:', dbError);
+    res.status(500).json({ error: '個人のスケジュール削除中にエラーが発生しました。' });
+  }
+});
+
+// POST /api/my-calendar/import-google - Import events from Google Calendar
+app.post('/api/my-calendar/import-google', async (req, res) => {
+  const username = req._constructedUsername;
+  if (!username) {
+    return res.status(401).json({ error: '認証が必要です。' });
+  }
+
+  try {
+    // 1. Get user's Google auth tokens from DB
+    const [authRows] = await dbPool.execute('SELECT access_token, refresh_token, expiry_date FROM user_google_auth WHERE username = ?', [username]);
+    if (authRows.length === 0) {
+      return res.status(401).json({ error: 'Googleアカウントが連携されていません。' });
+    }
+
+    const tokens = authRows[0];
+    oauth2Client.setCredentials({
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      expiry_date: tokens.expiry_date,
+    });
+
+    // 2. Get calendar events
+    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+    const now = new Date();
+    const oneMonthLater = new Date();
+    oneMonthLater.setMonth(now.getMonth() + 1);
+
+    const calendarRes = await calendar.events.list({
+      calendarId: 'primary',
+      timeMin: now.toISOString(),
+      timeMax: oneMonthLater.toISOString(),
+      singleEvents: true,
+      orderBy: 'startTime',
+    });
+
+    const events = calendarRes.data.items;
+    if (!events || events.length === 0) {
+      return res.status(200).json({ message: 'Googleカレンダーに今後1ヶ月の予定は見つかりませんでした。' });
+    }
+
+    // 3. Insert events into user_schedules table
+    const connection = await dbPool.getConnection();
+    await connection.beginTransaction();
+    try {
+      for (const event of events) {
+        const title = event.summary || '(タイトルなし)';
+        const start_datetime = event.start.dateTime || event.start.date;
+        const end_datetime = event.end.dateTime || event.end.date;
+
+        // Simple upsert: insert or ignore if the exact event already exists
+        const upsertQuery = `
+          INSERT INTO user_schedules (username, title, start_datetime, end_datetime)
+          SELECT ?, ?, ?, ?
+          WHERE NOT EXISTS (
+            SELECT 1 FROM user_schedules 
+            WHERE username = ? AND title = ? AND start_datetime = ? AND end_datetime = ?
+          )
+        `;
+        await connection.execute(upsertQuery, [username, title, start_datetime, end_datetime, username, title, start_datetime, end_datetime]);
+      }
+      await connection.commit();
+      res.status(200).json({ message: `${events.length}件の予定をインポートしました。` });
+    } catch (dbError) {
+      await connection.rollback();
+      throw dbError;
+    } finally {
+      connection.release();
+    }
+
+  } catch (error) {
+    console.error('Error importing from Google Calendar:', error);
+    res.status(500).json({ error: 'Googleカレンダーからのインポート中にエラーが発生しました。' });
+  }
+});
+
+// ★★★ END: My Calendar API Endpoints ★★★
+
 // ★★★ START: External API Proxy (escape.id) ★★★
 
 // POST /api/fetch-html - 外部URLからHTMLを取得
@@ -766,15 +1036,62 @@ app.post('/api/fetch-html', async (req, res) => {
 
 // --- スケジュール関連のエンドポイント ---
 
-// POST /api/get-schedule - スケジュール取得 (ペイロードでパラメータを受け取る)
+// POST /api/get-schedule - スケジュール取得
 app.post('/api/get-schedule', async (req, res) => {
-  const { event_url, date_from, date_to, location_uid } = req.body; // req.query から req.body に変更
+  console.log('[get-schedule] Received request body:', req.body);
+  const { event_url, date_from, date_to, location_uid } = req.body;
 
-  if (!event_url || !date_from || !date_to || !location_uid) {
-    return res.status(400).json({ error: 'event_url, date_from, date_to, location_uid are required in the request body.' }); // エラーメッセージを更新
+   // Yodaka pages: extract LivePocket ticket base URL from schedule section
+  if (event_url.includes('yodaka.info')) {
+    console.log('[get-schedule] Detected Yodaka event URL:', event_url);
+    try {
+      console.log('[get-schedule] Fetching Yodaka HTML...');
+      const { data: yodakaHtml } = await axios.get(event_url, { timeout: EXTERNAL_REQUEST_TIMEOUT, headers: { 'User-Agent': 'Mozilla/5.0' } });
+      console.log('[get-schedule] Fetched Yodaka HTML length:', yodakaHtml.length);
+      const match = yodakaHtml.match(/https:\/\/t\.livepocket\.jp\/t\/[A-Za-z0-9\-]+/);
+      console.log('[get-schedule] Yodaka regex match:', match);
+      if (!match) throw new Error('YodakaページからLivePocket URLが見つかりません');
+      const baseLpUrl = match[0];
+      console.log('[get-schedule] Base LivePocket URL:', baseLpUrl);
+      const lpResults = await fetchScheduleFromLivePocket(baseLpUrl);
+      console.log('[get-schedule] fetchScheduleFromLivePocket returned:', lpResults);
+      
+      // lpResults is already in the correct format with dates array
+      // Sort dates and return directly
+      const dates = lpResults.sort((a, b) => new Date(a.date) - new Date(b.date));
+      console.log('[get-schedule] Final dates array:', JSON.stringify(dates, null, 2));
+      return res.json({ dates });
+    } catch (err) {
+      console.error('[get-schedule] Yodakaスクレイピング失敗:', err);
+      return res.status(500).json({ error: 'Yodakaスクレイピング失敗', details: err.message });
+    }
   }
 
-  const urlParts = event_url.match(/escape\.id\/org\/([^\/]+)\/event\/([^\/]+)/);
+  // LivePocket events
+  if (event_url.includes('t.livepocket.jp/t/')) {
+    try {
+      const data = await fetchScheduleFromLivePocket(event_url);
+      return res.json({ schedules: data });
+    } catch (err) {
+      return res.status(500).json({ error: 'LivePocket scraping failed', details: err.message });
+    }
+  }
+  // SCRAP (Mystery Circus) events
+  if (event_url.includes('realdgame.jp') || event_url.includes('scrapticket.jp')) {
+    try {
+      const data = await fetchScheduleFromScrap(event_url);
+      return res.json({ schedules: data });
+    } catch (err) {
+      return res.status(500).json({ error: 'SCRAP ticket scraping failed', details: err.message });
+    }
+  }
+
+   // Basic validation: event_url and date range are required; location_uid can be null for LivePocket/SCRAP or all events
+  if (!event_url || !date_from || !date_to) {
+    return res.status(400).json({ error: 'event_url, date_from, date_to are required in the request body.' });
+  }
+
+  const urlParts = event_url.match(/escape\.id\/([^\/]+)-org\/e-([^\/]+)/);
   if (!urlParts || urlParts.length < 3) {
     console.error('[API /get-schedule] Invalid event_url format:', event_url);
     return res.status(400).json({ error: 'Invalid event_url format. Could not extract orgSlug and eventSlug.' });
@@ -934,7 +1251,7 @@ async function fetchEventSlotsForSummary(eventUrl, dateFrom, dateTo, locationUid
     return [];
   }
 
-  const urlParts = eventUrl.match(/escape\.id\/org\/([^\/]+)\/event\/([^\/]+)/);
+  const urlParts = eventUrl.match(/escape\.id\/([^\/]+)-org\/e-([^\/]+)/);
   if (!urlParts || urlParts.length < 3) {
     console.error('[fetchEventSlotsForSummary] Invalid event_url format:', eventUrl);
     return [];
@@ -1052,6 +1369,158 @@ async function fetchEventSlotsForSummary(eventUrl, dateFrom, dateTo, locationUid
     }
     return [];
   }
+}
+
+// Helper: Scrape schedule from LivePocket ticket pages
+async function fetchScheduleFromLivePocket(eventUrl) {
+  console.log('[LivePocket] fetchScheduleFromLivePocket start:', eventUrl);
+  const dateMap = {};
+  let page = 1;
+  
+  // Add headers to avoid 403 Forbidden
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+    'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache',
+    'Sec-Ch-Ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Windows"',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-User': '?1',
+    'Upgrade-Insecure-Requests': '1'
+  };
+  
+  while (true) {
+    const pagedUrl = `${eventUrl}?sort=1&page=${page}`;
+    console.log('[LivePocket] Fetching paged URL:', pagedUrl);
+    
+    try {
+      const { data: html } = await axios.get(pagedUrl, { 
+        timeout: EXTERNAL_REQUEST_TIMEOUT,
+        headers: headers
+      });
+      const $ = cheerio.load(html);
+      const links = $('a[href^="https://t.livepocket.jp/e/"]').map((i, el) => $(el).attr('href')).get();
+      console.log('[LivePocket] Found detail links count:', links.length, links);
+      
+      for (const rel of links) {
+        const detailUrl = rel.startsWith('http') ? rel : `https://t.livepocket.jp${rel}`;
+        console.log('[LivePocket] Fetching detail URL:', detailUrl);
+        
+        try {
+          const { data: detailHtml } = await axios.get(detailUrl, { 
+            timeout: EXTERNAL_REQUEST_TIMEOUT,
+            headers: headers
+          });
+          const $$ = cheerio.load(detailHtml);
+          
+          // Legacy parsing of date/times with vacancy status
+          $$('section.ticket section.title h4.text-break').each((i, elem) => {
+            const text = $$(elem).text().trim();
+            const m = text.match(/(\d{1,2})\/(\d{1,2})/);
+            if (m) {
+              const month = m[1].padStart(2, '0');
+              const day = m[2].padStart(2, '0');
+              const dateStr = `${new Date().getFullYear()}-${month}-${day}`;
+              const times = text.match(/(\d{1,2}:\d{2})/g)?.map(ts => ts.trim()) || [];
+              
+              // Extract vacancy status from status label
+              let vacancyType = 'MANY'; // default
+              const statusSection = $$(elem).closest('section.title').find('section.status');
+              if (statusSection.hasClass('sell-out-soon')) {
+                vacancyType = 'FEW';
+              } else if (statusSection.hasClass('finished-scheduled-quantity')) {
+                vacancyType = 'FULL';
+              } else if (statusSection.hasClass('sale')) {
+                vacancyType = 'MANY';
+              }
+              
+              if (!dateMap[dateStr]) dateMap[dateStr] = [];
+              times.forEach(time => {
+                dateMap[dateStr].push({ time, vacancyType });
+              });
+            }
+          });
+        } catch (detailError) {
+          console.warn('[LivePocket] Failed to fetch detail URL:', detailUrl, detailError.message);
+          // Continue with other detail URLs
+        }
+      }
+      
+      // Check for next page
+      const pagerLinks = $('a').map((i, el) => $(el).attr('href')).get();
+      console.log('[LivePocket] Pager links found:', pagerLinks);
+      const hasNext = pagerLinks.some(href => href && href.includes(`page=${page + 1}`));
+      if (!hasNext) break;
+      page++;
+      
+      // Add delay between requests to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+    } catch (pageError) {
+      console.warn('[LivePocket] Failed to fetch page:', pagedUrl, pageError.message);
+      break; // Stop pagination on error
+    }
+  }
+  
+  // Build schedules array with vacancy information
+  const schedules = Object.entries(dateMap).map(([date, timeEntries]) => {
+    // Group by time and keep the most restrictive vacancy status
+    const timeMap = {};
+    timeEntries.forEach(({ time, vacancyType }) => {
+      if (!timeMap[time]) {
+        timeMap[time] = vacancyType;
+      } else {
+        // Keep most restrictive: FULL > FEW > MANY
+        if (vacancyType === 'FULL' || (timeMap[time] === 'MANY' && vacancyType === 'FEW')) {
+          timeMap[time] = vacancyType;
+        }
+      }
+    });
+    
+    const slots = Object.entries(timeMap).map(([time, vacancyType]) => {
+      const startAt = `${date}T${time}:00+09:00`;
+      return {
+        startAt,
+        startTimeString: time,
+        vacancyType
+      };
+    }).sort((a, b) => a.startTimeString.localeCompare(b.startTimeString));
+    
+    return { date, slots, vacancyType: slots[0]?.vacancyType || 'MANY' };
+  });
+  
+  console.log('[LivePocket] fetchScheduleFromLivePocket result count:', schedules.length, schedules);
+  return schedules;
+}
+
+// Helper: Scrape schedule from SCRAP (Mystery Circus) ticket pages
+async function fetchScheduleFromScrap(eventUrl) {
+  const schedules = [];
+  const { data: html } = await axios.get(eventUrl, { timeout: EXTERNAL_REQUEST_TIMEOUT });
+  const $ = cheerio.load(html);
+  const codes = $('div.event-detail-venue[aria-controls]').map((i, el) => $(el).attr('aria-controls')).get().filter(code => /^\d+$/.test(code));
+  for (const code of codes) {
+    const ticketUrl = `https://ticket.mysterycircus.jp/index.php?dispatch=products.view&product_id=${code}`;
+    const { data: detailHtml } = await axios.get(ticketUrl, { timeout: EXTERNAL_REQUEST_TIMEOUT });
+    const $$ = cheerio.load(detailHtml);
+    const tab = $$('#content_product_tab_7');
+    const periodText = tab.find('h4:contains("開催期間")').next('div').find('p').first().text();
+    const [startText, endText] = periodText.split('〜').map(t => t.trim().replace(/\(.+/, ''));
+    const startDate = new Date(startText).toISOString().split('T')[0];
+    const endDate = new Date(endText).toISOString().split('T')[0];
+    const timesHtml = tab.find('h4:contains("開催時間")').next('div').find('p').html() || '';
+    const times = timesHtml.split(/<br\s*\/?>/i)
+      .map(line => line.replace(/^[^：]+：/, '').split('/').map(t => t.trim()))
+      .flat().filter(t => t);
+    schedules.push({ startDate, endDate, times });
+  }
+  return schedules;
 }
 
 // Catch-all route - MOVED HERE to be after all specific API routes

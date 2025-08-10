@@ -14,7 +14,13 @@
       <p class="text-xs text-yellow-700 mt-1">これは、イベントの参加状況表示とソートのテスト用です。</p>
     </div> -->
 
-    <div class="mb-6 text-right">
+    <div class="mb-6 text-right flex justify-end gap-4">
+      <button
+        @click="navigateToMyCalendar"
+        class="button-secondary"
+      >
+        マイカレンダー
+      </button>
       <button
         @click="navigateToCreateEvent"
         class="button-create-event"
@@ -142,10 +148,10 @@ function formatDate(dateString) {
 function extractEventName(url) {
   try {
     const pathSegments = new URL(url).pathname.split('/');
-    // 例: /org/tumbleweed/event/yawfwel/ -> yawfwel
+    // 例: /tumbleweed-org/e-yawfwel/ -> yawfwel
     const eventSegment = pathSegments.filter(Boolean).pop();
     if (eventSegment) {
-      return eventSegment.replace(/-/g, ' ').replace(/_/g, ' ');
+      return eventSegment.replace(/-org/g, '').replace(/-/g, ' ').replace(/_/g, ' ');
     }
     return 'イベント';
   } catch (e) {
@@ -174,7 +180,7 @@ async function fetchEvents() {
         maxParticipants: event.maxParticipants,
         estimated_time: event.estimated_time,
         location_name: event.location_name,
-        location_address: event.location_address, // ★ location_address を追加
+        location_address: event.location_address,
         hasCurrentUserSubmittedStatus: event.hasCurrentUserSubmittedStatus,
         submittedUsersCount: event.submittedUsersCount,
     }));
@@ -235,15 +241,31 @@ const sortedEvents = computed(() => {
 function navigateToSchedule(eventUrl) {
   try {
     const url = new URL(eventUrl);
-    const pathParts = url.pathname.split('/').filter(part => part.length > 0);
-    if (pathParts.length >= 4 && pathParts[0] === 'org' && pathParts[2] === 'event') {
-      const orgSlug = pathParts[1];
-      const eventSlug = pathParts[3];
-      router.push({ name: 'SchedulePage', params: { orgSlug, eventSlug } });
+    // Special case for Yodaka URLs
+    if (url.hostname === 'yodaka.info') {
+      const parts = url.pathname.split('/').filter(Boolean);
+      // parts = ['event', '{slug}']
+      const slug = parts.length >= 2 ? parts[1] : parts.pop();
+      router.push({ name: 'SchedulePage', params: { orgSlug: 'Yodaka', eventSlug: slug } });
+      return;
+    }
+    // Fallback for old/new patterns
+    const parts = url.pathname.split('/').filter(Boolean);
+    let orgSlug, eventSlug;
+    // Old pattern: /org/{orgSlug}/event/{eventSlug}/
+    if (parts[0] === 'org' && parts[2] === 'event' && parts.length >= 4) {
+      orgSlug = parts[1];
+      eventSlug = parts[3];
+    } else if (parts.length >= 2) {
+      // New pattern: /{orgSlug}-org/e-{eventSlug}/
+      // Strip suffix and prefix to get base slugs
+      orgSlug = parts[0].endsWith('-org') ? parts[0].slice(0, -4) : parts[0];
+      eventSlug = parts[1].startsWith('e-') ? parts[1].slice(2) : parts[1];
     } else {
       console.error('Invalid event URL format for schedule navigation:', eventUrl);
-      // Fallback or error handling if needed
+      return;
     }
+    router.push({ name: 'SchedulePage', params: { orgSlug, eventSlug } });
   } catch (e) {
     console.error('Error parsing event URL for schedule navigation:', eventUrl, e);
   }
@@ -253,19 +275,28 @@ function navigateToCreateEvent() {
   router.push({ name: 'CreateEvent' });
 }
 
+function navigateToMyCalendar() {
+  router.push({ name: 'MyCalendar' });
+}
+
 function navigateToEditEvent(eventUrl) {
   try {
     const url = new URL(eventUrl);
-    const pathParts = url.pathname.split('/').filter(part => part.length > 0);
-    // Expected format: /org/{orgSlug}/event/{eventSlug}/
-    if (pathParts.length >= 4 && pathParts[0] === 'org' && pathParts[2] === 'event') {
-      const orgSlug = pathParts[1];
-      const eventSlug = pathParts[3];
-      router.push({ name: 'EditEvent', params: { orgSlugProp: orgSlug, eventSlugProp: eventSlug } });
+    const parts = url.pathname.split('/').filter(Boolean);
+    let orgSlug, eventSlug;
+    // Old pattern: /org/{orgSlug}/event/{eventSlug}/
+    if (parts[0] === 'org' && parts[2] === 'event' && parts.length >= 4) {
+      orgSlug = parts[1];
+      eventSlug = parts[3];
+    } else if (parts.length >= 2) {
+      // New pattern: /{orgSlug}-org/e-{eventSlug}/
+      orgSlug = parts[0].endsWith('-org') ? parts[0].slice(0, -4) : parts[0];
+      eventSlug = parts[1].startsWith('e-') ? parts[1].slice(2) : parts[1];
     } else {
-      console.error('Cannot edit: Invalid event URL format for extracting slugs:', eventUrl);
-      // Optionally, display an error to the user
+      console.error('Invalid event URL format for editing:', eventUrl);
+      return;
     }
+    router.push({ name: 'EditEvent', params: { orgSlugProp: orgSlug, eventSlugProp: eventSlug } });
   } catch (e) {
     console.error('Error parsing event URL for editing:', eventUrl, e);
   }
@@ -274,14 +305,21 @@ function navigateToEditEvent(eventUrl) {
 function navigateToSummary(eventUrl) {
   try {
     const url = new URL(eventUrl);
-    const pathParts = url.pathname.split('/').filter(part => part.length > 0);
-    if (pathParts.length >= 4 && pathParts[0] === 'org' && pathParts[2] === 'event') {
-      const orgSlug = pathParts[1];
-      const eventSlug = pathParts[3];
-      router.push({ name: 'EventSummary', params: { orgSlug, eventSlug } });
+    const parts = url.pathname.split('/').filter(Boolean);
+    let orgSlug, eventSlug;
+    // Old pattern: /org/{orgSlug}/event/{eventSlug}/
+    if (parts[0] === 'org' && parts[2] === 'event' && parts.length >= 4) {
+      orgSlug = parts[1];
+      eventSlug = parts[3];
+    } else if (parts.length >= 2) {
+      // New pattern: /{orgSlug}-org/e-{eventSlug}/
+      orgSlug = parts[0].endsWith('-org') ? parts[0].slice(0, -4) : parts[0];
+      eventSlug = parts[1].startsWith('e-') ? parts[1].slice(2) : parts[1];
     } else {
       console.error('Invalid event URL format for summary navigation:', eventUrl);
+      return;
     }
+    router.push({ name: 'EventSummary', params: { orgSlug, eventSlug } });
   } catch (e) {
     console.error('Error parsing event URL for summary navigation:', eventUrl, e);
   }

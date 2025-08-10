@@ -1,0 +1,8 @@
+{
+  "name": "nazotoki-scheduler-monorepo",
+  "private": true,
+  "scripts": {
+    "dev": "docker compose up --build",
+    "down": "docker compose down"
+  }
+}

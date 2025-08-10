@@ -576,7 +576,7 @@ async function fetchSummaryData() {
   errorMessage.value = '';
 
   // Reconstruct the event URL from slugs, ensuring it ends with a slash
-  const eventUrl = `https://escape.id/org/${props.orgSlug}/event/${props.eventSlug}/`;
+  const eventUrl = (props.orgSlug === 'Yodaka') ? `https://yodaka.info/event/${props.eventSlug}/` : `https://escape.id/${props.orgSlug}-org/e-${props.eventSlug}/`;
   console.log('[EventSummaryPage] Reconstructed event URL for fetching summary:', eventUrl);
 
   try {
@@ -592,38 +592,47 @@ async function fetchSummaryData() {
     allUsers.value = data.allUsers || [];
     userSelectionsMap.value = data.userSelectionsMap || {};
 
+    if (props.orgSlug === 'Yodaka') {
+      try {
+        // TODO: 実装する。ダルすぎ！！！！！
+      } catch (err) {
+        console.error('[SummaryPage] Error fetching Yodaka event details:', err);
+        errorMessage.value = 'Yodakaイベント詳細の取得中にエラーが発生し、売れ行き状況を表示できません。';
+      }
+    }
+
     if (data.locationUid) {
-        eventLocationUid.value = data.locationUid;
+      eventLocationUid.value = data.locationUid;
     } else {
-        // Fallback:別途イベント詳細を取得してlocationUidを得る
-        try {
-            console.log(`[SummaryPage] Fetching event details for locationUid for: ${eventUrl}`);
-            const eventDetailsResponse = await fetch(`${API_BASE_URL}/events/${encodeURIComponent(eventUrl)}`);
-            if (eventDetailsResponse.ok) {
-                const details = await eventDetailsResponse.json();
-                if (details.locationUid) {
-                    eventLocationUid.value = details.locationUid;
-                    console.log('[SummaryPage] Fetched locationUid:', eventLocationUid.value);
-                } else {
-                    console.warn('[SummaryPage] locationUid not found in event details.');
-                    // エラーメッセージに追記する形に変更
-                    const msg = 'イベントの場所情報(locationUid)の取得に失敗しました。売れ行き状況を表示できません。';
-                    errorMessage.value = errorMessage.value ? `${errorMessage.value}\\n${msg}` : msg;
-                }
-            } else {
-                 console.warn('[SummaryPage] Failed to fetch event details for locationUid.');
-                 const msg = 'イベント詳細の取得に失敗し、売れ行き状況を表示できません。';
-                 errorMessage.value = errorMessage.value ? `${errorMessage.value}\\n${msg}` : msg;
-            }
-        } catch (err) {
-            console.error('[SummaryPage] Error fetching event details for locationUid:', err);
-            const msg = 'イベント詳細の取得中にエラーが発生し、売れ行き状況を表示できません。';
+      // Fallback:別途イベント詳細を取得してlocationUidを得る
+      try {
+        console.log(`[SummaryPage] Fetching event details for locationUid for: ${eventUrl}`);
+        const eventDetailsResponse = await fetch(`${API_BASE_URL}/events/${encodeURIComponent(eventUrl)}`);
+        if (eventDetailsResponse.ok) {
+          const details = await eventDetailsResponse.json();
+          if (details.locationUid) {
+            eventLocationUid.value = details.locationUid;
+            console.log('[SummaryPage] Fetched locationUid:', eventLocationUid.value);
+          } else {
+            console.warn('[SummaryPage] locationUid not found in event details.');
+            // エラーメッセージに追記する形に変更
+            const msg = 'イベントの場所情報(locationUid)の取得に失敗しました。売れ行き状況を表示できません。';
             errorMessage.value = errorMessage.value ? `${errorMessage.value}\\n${msg}` : msg;
+          }
+        } else {
+          console.warn('[SummaryPage] Failed to fetch event details for locationUid.');
+          const msg = 'イベント詳細の取得に失敗し、売れ行き状況を表示できません。';
+          errorMessage.value = errorMessage.value ? `${errorMessage.value}\\n${msg}` : msg;
         }
+      } catch (err) {
+        console.error('[SummaryPage] Error fetching event details for locationUid:', err);
+        const msg = 'イベント詳細の取得中にエラーが発生し、売れ行き状況を表示できません。';
+        errorMessage.value = errorMessage.value ? `${errorMessage.value}\\n${msg}` : msg;
+      }
     }
 
     if (eventLocationUid.value && allEventTimeSlotsUTC.value.length > 0 && eventStartDate.value && eventEndDate.value) {
-        await fetchVacancyData(); // 売れ行き情報を取得
+      await fetchVacancyData(); // 売れ行き情報を取得
     }
 
     currentPage.value = 1;
@@ -644,19 +653,25 @@ async function fetchSummaryData() {
 }
 
 async function fetchVacancyData() {
-  if (!props.orgSlug || !props.eventSlug || !eventStartDate.value || !eventEndDate.value || !eventLocationUid.value) {
+  if (!props.orgSlug || !props.eventSlug || !eventStartDate.value || !eventEndDate.value) {
     console.warn('Cannot fetch vacancy data, missing params.', 
-      { orgSlug: props.orgSlug, eventSlug: props.eventSlug, start: eventStartDate.value, end: eventEndDate.value, uid: eventLocationUid.value });
+      { orgSlug: props.orgSlug, eventSlug: props.eventSlug, start: eventStartDate.value, end: eventEndDate.value });
     return;
   }
-  const reconstructedEventUrl = `https://escape.id/org/${props.orgSlug}/event/${props.eventSlug}/`;
+  
+  // Construct event URL based on org type
+  const reconstructedEventUrl = (props.orgSlug === 'Yodaka') 
+    ? `https://yodaka.info/event/${props.eventSlug}/`
+    : `https://escape.id/${props.orgSlug}-org/e-${props.eventSlug}/`;
+    
   console.log('Fetching vacancy data for:', reconstructedEventUrl, eventStartDate.value, eventEndDate.value, eventLocationUid.value);
+  
   try {
     const scheduleResponse = await axios.post(`${API_BASE_URL}/get-schedule`, {
       event_url: reconstructedEventUrl,
       date_from: eventStartDate.value,
       date_to: eventEndDate.value,
-      location_uid: eventLocationUid.value
+      location_uid: eventLocationUid.value || null // Allow null for Yodaka events
     });
     
     console.log('[ScheduleFetch] Raw API Response:', JSON.parse(JSON.stringify(scheduleResponse.data))); // ★ 詳細なレスポンス全体ログ
