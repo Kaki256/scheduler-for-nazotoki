@@ -15,6 +15,9 @@
         <router-link to="/events" class="button button-secondary back-to-list-link"
           >イベント一覧ページに行く</router-link
         >
+        <router-link to="/my-calendar" class="button button-secondary back-to-list-link"
+          >マイカレンダーを開く</router-link
+        >
       </div>
     </div>
 
