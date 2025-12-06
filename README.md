@@ -81,7 +81,7 @@ docker-compose up --build -d
 ### 手動セットアップ
 
 #### 1. 前提条件
-- Node.js (v14以上)
+- Node.js (v18以上推奨。`corepack enable` で pnpm を有効化してください)
 - MySQL
 - Git
 
@@ -90,14 +90,10 @@ docker-compose up --build -d
 # リポジトリのクローン
 git clone https://github.com/Kaki256/scheduler-for-nazotoki.git
 cd scheduler-for-nazotoki
+corepack enable pnpm
 
-# バックエンドのセットアップ
-cd backend
-npm install
-
-# フロントエンドのセットアップ
-cd ../frontend
-npm install
+# ワークスペース一括インストール
+pnpm install
 ```
 
 #### 3. 環境設定
@@ -107,13 +103,17 @@ npm install
 #### 4. 起動
 ```bash
 # バックエンドサーバー起動
-cd backend
-node server.js
+pnpm start
 
 # フロントエンド開発サーバー起動
-cd frontend
-npm run dev
+pnpm --filter frontend dev
 ```
+
+## 🧹 Lint / Format
+
+- まとめて実行: `pnpm lint` / `pnpm format`
+- 自動修正込み: `pnpm lint:fix` / `pnpm format:fix`
+- 個別実行: `pnpm --filter frontend lint` / `pnpm --filter backend lint`
 
 ## 🔒 セキュリティに関する注意
 

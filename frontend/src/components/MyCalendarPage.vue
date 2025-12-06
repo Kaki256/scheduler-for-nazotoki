@@ -2,7 +2,9 @@
   <div class="my-calendar-container">
     <div class="calendar-header">
       <h1>マイカレンダー</h1>
-      <button @click="handleGoogleImport" class="button-google-import">Googleカレンダーからインポート</button>
+      <button class="button-google-import" @click="handleGoogleImport">
+        Googleカレンダーからインポート
+      </button>
     </div>
     <p>自分の予定を登録して、謎解きイベントの出欠入力に活用しましょう。</p>
     <FullCalendar :options="calendarOptions" />
@@ -37,7 +39,7 @@ const calendarOptions = ref({
   headerToolbar: {
     left: 'prev,next today',
     center: 'title',
-    right: 'dayGridMonth,timeGridWeek,timeGridDay'
+    right: 'dayGridMonth,timeGridWeek,timeGridDay',
   },
   locale: jaLocale,
   events: [],
@@ -61,7 +63,7 @@ const calendarOptions = ref({
 const fetchSchedules = async () => {
   try {
     const response = await axios.get(`${API_BASE_URL}/my-calendar`);
-    calendarOptions.value.events = response.data.map(event => ({
+    calendarOptions.value.events = response.data.map((event) => ({
       id: event.id,
       title: event.title,
       start: event.start_datetime,
@@ -143,13 +145,12 @@ onMounted(() => {
     alert('Googleアカウントの連携に成功しました。カレンダーをインポートします。');
     importFromGoogle();
     // Clean up URL
-    window.history.replaceState({}, document.title, "/my-calendar");
+    window.history.replaceState({}, document.title, '/my-calendar');
   } else if (urlParams.get('google_auth') === 'error') {
     alert('Googleアカウントの連携に失敗しました。');
-    window.history.replaceState({}, document.title, "/my-calendar");
+    window.history.replaceState({}, document.title, '/my-calendar');
   }
 });
-
 </script>
 
 <style scoped>
@@ -165,7 +166,7 @@ onMounted(() => {
   margin-bottom: 1rem;
 }
 .button-google-import {
-  background-color: #4285F4;
+  background-color: #4285f4;
   color: white;
   padding: 0.5rem 1rem;
   border-radius: 4px;
