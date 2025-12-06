@@ -7,6 +7,9 @@
           <button class="button button-primary schedule-link mr-2" @click="goToSchedulePage">
             日程調整ページに行く
           </button>
+          <button class="button button-secondary mr-2" @click="goToMyCalendar">
+            マイカレンダーを開く
+          </button>
           <button class="button button-secondary event-list-link" @click="goBack">
             イベント一覧ページに行く
           </button>
@@ -1264,6 +1267,10 @@ function goToSchedulePage() {
     name: 'SchedulePage',
     params: { orgSlug: props.orgSlug, eventSlug: props.eventSlug },
   });
+}
+
+function goToMyCalendar() {
+  router.push({ name: 'MyCalendar' });
 }
 
 function handleDragStart(event, user, fromTeamIdx, memberIdx) {

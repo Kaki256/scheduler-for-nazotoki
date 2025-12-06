@@ -5,6 +5,10 @@
       <p class="text-gray-600 mt-2">
         参加したいイベントを選択するか、新しいイベントを登録しましょう。
       </p>
+      <div class="hero-actions">
+        <button class="button-primary" @click="router.push('/events/new')">新しいイベントを登録</button>
+        <button class="button-secondary" @click="router.push('/my-calendar')">マイカレンダーを開く</button>
+      </div>
     </header>
     <div v-if="errorMessage" class="error-container">
       <p>{{ errorMessage }}</p>
@@ -27,7 +31,11 @@
         />
       </svg>
       <h3 class="mt-2 text-lg font-medium text-gray-900">登録されているイベントがありません</h3>
-      <p class="mt-1 text-sm text-gray-500">上のボタンから新しいイベントを登録できます。</p>
+      <p class="mt-1 text-sm text-gray-500">上のボタンから新しいイベントを登録するか、マイカレンダーを設定できます。</p>
+      <div class="no-events-actions">
+        <button class="button-primary" @click="router.push('/events/new')">新規イベント登録</button>
+        <button class="button-secondary" @click="router.push('/my-calendar')">マイカレンダー設定へ</button>
+      </div>
     </div>
 
     <div v-if="sortedEvents.length > 0" class="events-grid">
@@ -509,6 +517,22 @@ onMounted(() => {
   display: grid;
   grid-template-columns: repeat(1, minmax(0, 1fr));
   gap: 1.5rem;
+}
+
+.hero-actions {
+  margin-top: 1.5rem;
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.no-events-actions {
+  margin-top: 1rem;
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 @media (min-width: 768px) {

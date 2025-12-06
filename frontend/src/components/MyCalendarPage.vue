@@ -2,11 +2,17 @@
   <div class="my-calendar-container">
     <div class="calendar-header">
       <h1>マイカレンダー</h1>
-      <button class="button-google-import" @click="handleGoogleImport">
-        Googleカレンダーからインポート
-      </button>
+      <div class="header-actions">
+        <router-link to="/events" class="button-secondary">イベント一覧へ</router-link>
+        <router-link to="/events/new" class="button-secondary">新規イベント登録</router-link>
+        <button class="button-google-import" @click="handleGoogleImport">
+          Googleカレンダーからインポート
+        </button>
+      </div>
     </div>
-    <p>自分の予定を登録して、謎解きイベントの出欠入力に活用しましょう。</p>
+    <p class="calendar-lede">
+      自分の予定を登録して、謎解きイベントの出欠入力に活用しましょう。インポート後は日程調整ページで候補にマージされます。
+    </p>
     <FullCalendar :options="calendarOptions" />
     <ScheduleModal
       v-if="isModalOpen"
@@ -165,6 +171,33 @@ onMounted(() => {
   align-items: center;
   margin-bottom: 1rem;
 }
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.calendar-lede {
+  color: #475569;
+  margin-bottom: 1rem;
+}
+
+.button-secondary {
+  background: #e2e8f0;
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button-secondary:hover {
+  background: #cbd5e1;
+}
+
 .button-google-import {
   background-color: #4285f4;
   color: white;
