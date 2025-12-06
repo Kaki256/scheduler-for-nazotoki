@@ -11,24 +11,41 @@
           <label for="eventUrl" class="form-label">イベントURL:</label>
           <div class="flex items-center">
             <input
-              type="url"
               id="eventUrl"
               v-model="event.eventUrl"
+              type="url"
               placeholder="例: https://escape.id/tumbleweed-org/e-yawfwel/"
               class="form-input flex-grow"
               :disabled="mode === 'edit'"
               required
             />
             <button
-              type="button"
-              @click="fetchEventDataFromUrl"
               v-if="event.eventUrl && (effectiveMode === 'create' || effectiveMode === 'edit')"
+              type="button"
               class="button-fetch-data ml-2"
               :disabled="loading"
+              @click="fetchEventDataFromUrl"
             >
-              <svg v-if="loading && fetchOperationLoading" class="loading-spinner-button" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              <svg
+                v-if="loading && fetchOperationLoading"
+                class="loading-spinner-button"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  class="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  stroke-width="4"
+                ></circle>
+                <path
+                  class="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
               </svg>
               <span v-if="loading && fetchOperationLoading">取得中...</span>
               <span v-if="!(loading && fetchOperationLoading)">情報を取得</span>
@@ -40,9 +57,9 @@
         <div class="form-group">
           <label for="eventName" class="form-label">イベント名 (任意):</label>
           <input
-            type="text"
             id="eventName"
             v-model="event.name"
+            type="text"
             placeholder="例: 初めての謎解き"
             class="form-input"
           />
@@ -52,45 +69,46 @@
           <div>
             <label for="startDate" class="form-label">開始日:</label>
             <input
-              type="date"
               id="startDate"
               v-model="event.startDate"
+              type="date"
               class="form-input"
               required
             />
           </div>
           <div>
             <label for="endDate" class="form-label">終了日:</label>
-            <input
-              type="date"
-              id="endDate"
-              v-model="event.endDate"
-              class="form-input"
-              required
-            />
+            <input id="endDate" v-model="event.endDate" type="date" class="form-input" required />
           </div>
         </div>
-        
+
         <div v-if="errorMessage" class="error-message-container">
           {{ errorMessage }}
         </div>
 
         <div class="form-actions">
-          <button
-            type="button"
-            @click="cancel"
-            class="button-cancel"
-          >
-            キャンセル
-          </button>
-          <button
-            type="submit"
-            :disabled="loading"
-            class="button-submit"
-          >
-            <svg v-if="loading" class="loading-spinner-button" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          <button type="button" class="button-cancel" @click="cancel">キャンセル</button>
+          <button type="submit" :disabled="loading" class="button-submit">
+            <svg
+              v-if="loading"
+              class="loading-spinner-button"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                class="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                stroke-width="4"
+              ></circle>
+              <path
+                class="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              ></path>
             </svg>
             {{ submitButtonText }}
           </button>
@@ -108,13 +126,15 @@ import axios from 'axios';
 const props = defineProps({
   mode: {
     type: String,
-    default: '', 
+    default: '',
   },
-  orgSlugProp: { // For edit mode, to construct the event URL
+  orgSlugProp: {
+    // For edit mode, to construct the event URL
     type: String,
     default: null,
   },
-  eventSlugProp: { // For edit mode, to construct the event URL
+  eventSlugProp: {
+    // For edit mode, to construct the event URL
     type: String,
     default: null,
   },
@@ -131,7 +151,7 @@ const event = reactive({
   locationUid: '',
   maxParticipants: null, // maxParticipants を追加
   estimatedTime: '', // 所要時間を追加
-  locationName: '',  // 開催地名を追加
+  locationName: '', // 開催地名を追加
   locationAddress: '', // 開催地住所を追加
 });
 
@@ -147,10 +167,17 @@ const effectiveMode = computed(() => {
   return props.orgSlugProp && props.eventSlugProp ? 'edit' : 'create';
 });
 
-const pageTitle = computed(() => effectiveMode.value === 'create' ? '新しいイベントを登録' : 'イベント情報を編集');
-const pageSubtitle = computed(() => effectiveMode.value === 'create' ? 'イベントの情報を入力してください。' : 'イベントの情報を更新してください。');
+const pageTitle = computed(() =>
+  effectiveMode.value === 'create' ? '新しいイベントを登録' : 'イベント情報を編集'
+);
+const pageSubtitle = computed(() =>
+  effectiveMode.value === 'create'
+    ? 'イベントの情報を入力してください。'
+    : 'イベントの情報を更新してください。'
+);
 const submitButtonText = computed(() => {
-  if (loading.value && !fetchOperationLoading.value) { // fetchOperationLoadingでない場合のみ
+  if (loading.value && !fetchOperationLoading.value) {
+    // fetchOperationLoadingでない場合のみ
     return effectiveMode.value === 'create' ? '登録中...' : '更新中...';
   }
   return effectiveMode.value === 'create' ? '登録する' : '更新する';
@@ -167,7 +194,8 @@ const formatDateForInput = (dateString) => {
 };
 
 async function fetchEventDataFromUrl() {
-  if (!event.eventUrl) { // URLがない場合は何もしない
+  if (!event.eventUrl) {
+    // URLがない場合は何もしない
     return;
   }
   loading.value = true;
@@ -206,11 +234,13 @@ async function fetchEventDataFromUrl() {
     }
 
     const { html: htmlText } = await backendResponse.json();
-    
+
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlText, 'text/html');
-    
-    const astroIslandElement = doc.querySelector('astro-island[component-export="EventInitializer"]');
+
+    const astroIslandElement = doc.querySelector(
+      'astro-island[component-export="EventInitializer"]'
+    );
     if (!astroIslandElement) {
       // Fallback for Yodaka event pages
       if (event.eventUrl.includes('yodaka.info')) {
@@ -264,7 +294,8 @@ async function fetchEventDataFromUrl() {
 
     // Event Name
     if (infoDetails.eventName?.[1]) {
-      if (effectiveMode.value === 'create') { // Only update name if in create mode
+      if (effectiveMode.value === 'create') {
+        // Only update name if in create mode
         event.name = infoDetails.eventName[1];
         console.log('取得したイベント名:', event.name);
       } else {
@@ -290,7 +321,8 @@ async function fetchEventDataFromUrl() {
           if (!earliestFirstStartTime || currentDate < earliestFirstStartTime) {
             earliestFirstStartTime = currentDate;
           }
-        } else { // isEndTime
+        } else {
+          // isEndTime
           if (!latestLastEndTime || currentDate > latestLastEndTime) {
             latestLastEndTime = currentDate;
           }
@@ -303,7 +335,7 @@ async function fetchEventDataFromUrl() {
     const scheduleDataSources = [];
     // activeSlotGroups からスケジュール情報を収集
     if (infoDetails.activeSlotGroups && Array.isArray(infoDetails.activeSlotGroups[1])) {
-      infoDetails.activeSlotGroups[1].forEach(groupEntry => {
+      infoDetails.activeSlotGroups[1].forEach((groupEntry) => {
         if (groupEntry && Array.isArray(groupEntry) && groupEntry.length > 1 && groupEntry[1]) {
           scheduleDataSources.push(groupEntry[1]);
         }
@@ -311,8 +343,13 @@ async function fetchEventDataFromUrl() {
     }
     // visibleLocations からスケジュール情報を収集
     if (infoDetails.visibleLocations && Array.isArray(infoDetails.visibleLocations[1])) {
-      infoDetails.visibleLocations[1].forEach(locationEntry => {
-        if (locationEntry && Array.isArray(locationEntry) && locationEntry.length > 1 && locationEntry[1]) {
+      infoDetails.visibleLocations[1].forEach((locationEntry) => {
+        if (
+          locationEntry &&
+          Array.isArray(locationEntry) &&
+          locationEntry.length > 1 &&
+          locationEntry[1]
+        ) {
           // activeSlotGroupsで既に同じ場所の情報が処理されている可能性を考慮
           // ここでは単純に追加し、min/maxロジックで重複を処理する
           scheduleDataSources.push(locationEntry[1]);
@@ -320,17 +357,26 @@ async function fetchEventDataFromUrl() {
       });
     }
 
-    scheduleDataSources.forEach(source => {
-      if (source.firstStartTime && Array.isArray(source.firstStartTime) && source.firstStartTime.length > 1) {
+    scheduleDataSources.forEach((source) => {
+      if (
+        source.firstStartTime &&
+        Array.isArray(source.firstStartTime) &&
+        source.firstStartTime.length > 1
+      ) {
         processDateValue(source.firstStartTime[1], true);
       }
-      if (source.lastEndTime && Array.isArray(source.lastEndTime) && source.lastEndTime.length > 1) {
+      if (
+        source.lastEndTime &&
+        Array.isArray(source.lastEndTime) &&
+        source.lastEndTime.length > 1
+      ) {
         processDateValue(source.lastEndTime[1], false);
       }
     });
 
     if (earliestFirstStartTime) {
-      if (effectiveMode.value === 'create') { // Only update dates if in create mode
+      if (effectiveMode.value === 'create') {
+        // Only update dates if in create mode
         event.startDate = formatDateForInput(earliestFirstStartTime.toISOString());
         console.log('設定された最も早い開始日:', event.startDate, earliestFirstStartTime);
       } else {
@@ -343,7 +389,8 @@ async function fetchEventDataFromUrl() {
     }
 
     if (latestLastEndTime) {
-      if (effectiveMode.value === 'create') { // Only update dates if in create mode
+      if (effectiveMode.value === 'create') {
+        // Only update dates if in create mode
         event.endDate = formatDateForInput(latestLastEndTime.toISOString());
         console.log('設定された最も遅い終了日:', event.endDate, latestLastEndTime);
       } else {
@@ -354,24 +401,24 @@ async function fetchEventDataFromUrl() {
       console.warn('有効な終了日は見つかりませんでした。');
       if (effectiveMode.value === 'edit') event.endDate = originalEndDate; // Ensure original is kept
     }
-    
+
     // Location UID
     let extractedLocationUid = null;
     // Attempt to get UID from activeSlotGroups first
     if (infoDetails.activeSlotGroups?.[1]?.[0]?.[1]?.location?.[1]?.uid?.[1]) {
-        extractedLocationUid = infoDetails.activeSlotGroups[1][0][1].location[1].uid[1];
-    } 
+      extractedLocationUid = infoDetails.activeSlotGroups[1][0][1].location[1].uid[1];
+    }
     // If not found in activeSlotGroups, try visibleLocations second
     else if (infoDetails.visibleLocations?.[1]?.[0]?.[1]?.uid?.[1]) {
-        // The structure for visibleLocations seems to be infoDetails.visibleLocations[1][0][1] as the location object itself
-        extractedLocationUid = infoDetails.visibleLocations[1][0][1].uid[1];
+      // The structure for visibleLocations seems to be infoDetails.visibleLocations[1][0][1] as the location object itself
+      extractedLocationUid = infoDetails.visibleLocations[1][0][1].uid[1];
     }
-    
+
     if (extractedLocationUid) {
-        event.locationUid = extractedLocationUid;
-        console.log('取得したLocation UID:', event.locationUid);
+      event.locationUid = extractedLocationUid;
+      console.log('取得したLocation UID:', event.locationUid);
     } else {
-        console.warn('Location UIDの抽出に失敗しました。');
+      console.warn('Location UIDの抽出に失敗しました。');
     }
 
     // Max Participants
@@ -393,50 +440,52 @@ async function fetchEventDataFromUrl() {
     // Location Name (開催地名) and Location Address (開催地住所)
     let locationObjectForNameAndAddress = null;
     if (infoDetails.activeSlotGroups?.[1]?.[0]?.[1]?.location?.[1]) {
-        locationObjectForNameAndAddress = infoDetails.activeSlotGroups[1][0][1].location[1];
+      locationObjectForNameAndAddress = infoDetails.activeSlotGroups[1][0][1].location[1];
     } else if (infoDetails.visibleLocations?.[1]?.[0]?.[1]) {
-        locationObjectForNameAndAddress = infoDetails.visibleLocations[1][0][1];
+      locationObjectForNameAndAddress = infoDetails.visibleLocations[1][0][1];
     }
 
     if (locationObjectForNameAndAddress) {
-        if (locationObjectForNameAndAddress.name?.[1]) {
-            event.locationName = locationObjectForNameAndAddress.name[1];
-            console.log('取得した開催地名:', event.locationName);
-        } else {
-            console.warn('開催地名は location オブジェクトから取得できませんでした。');
-        }
+      if (locationObjectForNameAndAddress.name?.[1]) {
+        event.locationName = locationObjectForNameAndAddress.name[1];
+        console.log('取得した開催地名:', event.locationName);
+      } else {
+        console.warn('開催地名は location オブジェクトから取得できませんでした。');
+      }
 
-        if (locationObjectForNameAndAddress.address?.[1]) {
-            event.locationAddress = locationObjectForNameAndAddress.address[1];
-            console.log('取得した開催地住所:', event.locationAddress);
-        } else {
-            console.warn('開催地住所は location オブジェクトから取得できませんでした。');
-        }
+      if (locationObjectForNameAndAddress.address?.[1]) {
+        event.locationAddress = locationObjectForNameAndAddress.address[1];
+        console.log('取得した開催地住所:', event.locationAddress);
+      } else {
+        console.warn('開催地住所は location オブジェクトから取得できませんでした。');
+      }
     } else {
-        // フォールバックとして infoDetails 直下のキーも試す
-        console.warn('開催地名・住所の元となる location オブジェクトが見つかりませんでした。infoDetails 直下を試します。');
-        if (infoDetails.location_name?.[1]) {
-            event.locationName = infoDetails.location_name[1];
-            console.log('取得した開催地名 (infoDetails.location_name):', event.locationName);
-        } else {
-            console.warn('開催地名は infoDetails.location_name からも取得できませんでした。');
-        }
-        if (infoDetails.location_address?.[1]) {
-            event.locationAddress = infoDetails.location_address[1];
-            console.log('取得した開催地住所 (infoDetails.location_address):', event.locationAddress);
-        } else {
-            console.warn('開催地住所は infoDetails.location_address からも取得できませんでした。');
-        }
+      // フォールバックとして infoDetails 直下のキーも試す
+      console.warn(
+        '開催地名・住所の元となる location オブジェクトが見つかりませんでした。infoDetails 直下を試します。'
+      );
+      if (infoDetails.location_name?.[1]) {
+        event.locationName = infoDetails.location_name[1];
+        console.log('取得した開催地名 (infoDetails.location_name):', event.locationName);
+      } else {
+        console.warn('開催地名は infoDetails.location_name からも取得できませんでした。');
+      }
+      if (infoDetails.location_address?.[1]) {
+        event.locationAddress = infoDetails.location_address[1];
+        console.log('取得した開催地住所 (infoDetails.location_address):', event.locationAddress);
+      } else {
+        console.warn('開催地住所は infoDetails.location_address からも取得できませんでした。');
+      }
     }
 
     if (!event.name && !event.startDate && !event.endDate && !event.locationUid) {
-        errorMessage.value = '主要なイベント情報（名前、開始/終了日、場所ID）の取得に失敗しました。URLを確認するか、手動で入力してください。';
+      errorMessage.value =
+        '主要なイベント情報（名前、開始/終了日、場所ID）の取得に失敗しました。URLを確認するか、手動で入力してください。';
     } else if (!event.locationUid) {
-        // locationUid は登録に必須の可能性があるので、取得できなかった場合は警告を出す
-        errorMessage.value = 'Location UIDが取得できませんでした。イベントURLが正しいか、またはページの構造を確認してください。手動での入力が必要な場合があります。';
+      // locationUid は登録に必須の可能性があるので、取得できなかった場合は警告を出す
+      errorMessage.value =
+        'Location UIDが取得できませんでした。イベントURLが正しいか、またはページの構造を確認してください。手動での入力が必要な場合があります。';
     }
-
-
   } catch (err) {
     console.error('イベントデータの取得に失敗しました:', err);
     errorMessage.value = `情報取得エラー: ${err.message}`;
@@ -445,7 +494,6 @@ async function fetchEventDataFromUrl() {
     fetchOperationLoading.value = false;
   }
 }
-
 
 async function fetchEventDetails() {
   if (effectiveMode.value === 'edit' && props.orgSlugProp && props.eventSlugProp) {
@@ -459,22 +507,30 @@ async function fetchEventDetails() {
       } else {
         reconstructedEventUrl = `https://escape.id/${props.orgSlugProp}-org/e-${props.eventSlugProp}/`;
       }
-      console.log('[EventFormPage] Reconstructed event URL for fetching details:', reconstructedEventUrl);
-      
-      const response = await fetch(`${API_BASE_URL}/events/${encodeURIComponent(reconstructedEventUrl)}`);
+      console.log(
+        '[EventFormPage] Reconstructed event URL for fetching details:',
+        reconstructedEventUrl
+      );
+
+      const response = await fetch(
+        `${API_BASE_URL}/events/${encodeURIComponent(reconstructedEventUrl)}`
+      );
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'イベント情報の取得に失敗しました。' }));
+        const errorData = await response
+          .json()
+          .catch(() => ({ error: 'イベント情報の取得に失敗しました。' }));
         throw new Error(errorData.error || `サーバーエラー (${response.status})`);
       }
       const foundEvent = await response.json();
-      
+
       if (foundEvent) {
         event.eventUrl = foundEvent.event_url; // Store the normalized URL from backend
         event.name = foundEvent.name || '';
         event.startDate = formatDateForInput(foundEvent.startDate);
         event.endDate = formatDateForInput(foundEvent.endDate);
         event.locationUid = foundEvent.locationUid || '';
-        event.maxParticipants = foundEvent.maxParticipants !== undefined ? foundEvent.maxParticipants : null; // 編集時にもmaxParticipantsをセット
+        event.maxParticipants =
+          foundEvent.maxParticipants !== undefined ? foundEvent.maxParticipants : null; // 編集時にもmaxParticipantsをセット
         // Load new fields for edit mode
         event.estimatedTime = foundEvent.estimated_time || '';
         event.locationName = foundEvent.location_name || '';
@@ -517,18 +573,19 @@ async function handleSubmit() {
 
   try {
     let response;
-    if (effectiveMode.value === 'create') { 
+    if (effectiveMode.value === 'create') {
       response = await fetch(`${API_BASE_URL}/events`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-    } else { // edit mode
+    } else {
+      // edit mode
       // For PUT requests, the event URL in the path should be the one originally used to fetch the event.
       // The payload.eventUrl might be different if normalization changed it, but the path param must match the existing record.
       // However, our current setup normalizes on creation and expects normalized URLs for lookup.
       // So, we use the (potentially already normalized) event.eventUrl from the form, which was set during fetchEventDetails.
-      const eventUrlForPath = encodeURIComponent(event.eventUrl); 
+      const eventUrlForPath = encodeURIComponent(event.eventUrl);
       response = await fetch(`${API_BASE_URL}/events/${eventUrlForPath}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -537,15 +594,19 @@ async function handleSubmit() {
     }
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: '不明なエラーが発生しました。' }));
+      const errorData = await response
+        .json()
+        .catch(() => ({ error: '不明なエラーが発生しました。' }));
       throw new Error(errorData.error || `サーバーエラー (${response.status})`);
     }
-    
+
     // 成功したらイベント一覧ページに遷移
     router.push('/events');
   } catch (err) {
     console.error('Submit failed:', err);
-    errorMessage.value = err.message || (effectiveMode.value === 'create' ? '登録に失敗しました。' : '更新に失敗しました。');
+    errorMessage.value =
+      err.message ||
+      (effectiveMode.value === 'create' ? '登録に失敗しました。' : '更新に失敗しました。');
   } finally {
     loading.value = false;
   }
@@ -573,7 +634,6 @@ onMounted(() => {
     event.locationAddress = '';
   }
 });
-
 </script>
 
 <style scoped>
@@ -617,7 +677,9 @@ onMounted(() => {
   background-color: #ffffff; /* bg-white */
   padding: 2rem; /* p-8 */
   border-radius: 0.75rem; /* rounded-xl */
-  box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04); /* shadow-xl */
+  box-shadow:
+    0 20px 25px -5px rgba(0, 0, 0, 0.1),
+    0 10px 10px -5px rgba(0, 0, 0, 0.04); /* shadow-xl */
 }
 
 .form-group {
@@ -641,8 +703,10 @@ onMounted(() => {
   padding: 0.75rem 1rem; /* px-4 py-3 */
   border: 1px solid #d1d5db; /* border-gray-300 */
   border-radius: 0.5rem; /* rounded-lg */
-  box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); /* shadow-sm */
-  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-sm */
+  transition:
+    border-color 0.15s ease-in-out,
+    box-shadow 0.15s ease-in-out;
   color: #374151; /* text-gray-700 */
   font-size: 1rem;
   background-color: #ffffff; /* 明示的に背景を白に設定 */
@@ -677,7 +741,8 @@ onMounted(() => {
   margin-bottom: 2rem; /* mb-8 */
 }
 
-@media (min-width: 640px) { /* sm */
+@media (min-width: 640px) {
+  /* sm */
   .form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -699,7 +764,7 @@ onMounted(() => {
   justify-content: flex-end;
 }
 .form-actions > button:not(:last-child) {
-    margin-right: 1rem; /* space-x-4 */
+  margin-right: 1rem; /* space-x-4 */
 }
 
 .button-cancel {
@@ -709,12 +774,18 @@ onMounted(() => {
   font-weight: 600; /* font-semibold */
   padding: 0.75rem 1.5rem; /* py-3 px-6 */
   border-radius: 0.5rem; /* rounded-lg */
-  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); /* shadow-md */
-  transition: background-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 2px 4px -1px rgba(0, 0, 0, 0.06); /* shadow-md */
+  transition:
+    background-color 0.15s ease-in-out,
+    box-shadow 0.15s ease-in-out;
 }
 .button-cancel:hover {
   background-color: #9ca3af; /* hover:bg-gray-400 */
-  box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); /* hover:shadow-lg */
+  box-shadow:
+    0 10px 15px -3px rgba(0, 0, 0, 0.1),
+    0 4px 6px -2px rgba(0, 0, 0, 0.05); /* hover:shadow-lg */
 }
 .button-cancel:focus {
   outline: 2px solid transparent;
@@ -729,15 +800,22 @@ onMounted(() => {
   font-weight: 600; /* font-semibold */
   padding: 0.75rem 1.5rem; /* py-3 px-6 */
   border-radius: 0.5rem; /* rounded-lg */
-  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); /* shadow-md */
-  transition: background-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out, opacity 0.15s ease-in-out;
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 2px 4px -1px rgba(0, 0, 0, 0.06); /* shadow-md */
+  transition:
+    background-color 0.15s ease-in-out,
+    box-shadow 0.15s ease-in-out,
+    opacity 0.15s ease-in-out;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 .button-submit:hover {
   background-color: #4338ca; /* hover:bg-indigo-700 */
-  box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -1px rgba(0,0,0,0.05); /* hover:shadow-lg */
+  box-shadow:
+    0 10px 15px -3px rgba(0, 0, 0, 0.1),
+    0 4px 6px -1px rgba(0, 0, 0, 0.05); /* hover:shadow-lg */
 }
 .button-submit:focus {
   outline: 2px solid transparent;

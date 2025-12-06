@@ -1,13 +1,14 @@
 name: backend
 type: proc
 proc:
-  build: npm install
-  start: npm run start
+  build: corepack enable pnpm && pnpm install --filter backend --prod --frozen-lockfile
+  start: pnpm --filter backend start
   port: 4000
 env:
-  # NeoShowcaseで発行されるDB接続情報を利用
-  DB_HOST: ${NS_MARIADB_HOSTNAME}
-  DB_USER: ${NS_MARIADB_USER}
-  DB_PASS: ${NS_MARIADB_PASSWORD}
-  DB_NAME: ${NS_MARIADB_DATABASE}
-  DB_PORT: ${NS_MARIADB_PORT}
+  NS_MARIADB_HOSTNAME: ${NS_MARIADB_HOSTNAME}
+  NS_MARIADB_USER: ${NS_MARIADB_USER}
+  NS_MARIADB_PASSWORD: ${NS_MARIADB_PASSWORD}
+  NS_MARIADB_DATABASE: ${NS_MARIADB_DATABASE}
+  NS_MARIADB_PORT: ${NS_MARIADB_PORT}
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}

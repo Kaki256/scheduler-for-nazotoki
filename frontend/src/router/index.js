@@ -19,35 +19,35 @@ const routes = [
     path: '/schedule/:orgSlug/:eventSlug',
     name: 'SchedulePage',
     component: SchedulePage,
-    props: true
+    props: true,
   },
   {
     path: '/events/new',
     name: 'CreateEvent',
     component: EventFormPage,
-    props: { mode: 'create' }
+    props: { mode: 'create' },
   },
   {
     path: '/events/edit/:orgSlugProp/:eventSlugProp',
     name: 'EditEvent',
     component: EventFormPage,
-    props: route => ({ 
-      mode: 'edit', 
-      orgSlugProp: route.params.orgSlugProp, 
-      eventSlugProp: route.params.eventSlugProp 
-    })
+    props: (route) => ({
+      mode: 'edit',
+      orgSlugProp: route.params.orgSlugProp,
+      eventSlugProp: route.params.eventSlugProp,
+    }),
   },
   {
     path: '/summary/:orgSlug/:eventSlug',
     name: 'EventSummary',
-    component: EventSummaryPage, 
-    props: true
+    component: EventSummaryPage,
+    props: true,
   },
   {
     path: '/my-calendar',
     name: 'MyCalendar',
     component: MyCalendarPage,
-  }
+  },
 ];
 
 const router = createRouter({

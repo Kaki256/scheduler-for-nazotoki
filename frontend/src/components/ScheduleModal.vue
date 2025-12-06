@@ -5,18 +5,20 @@
       <form @submit.prevent="handleSubmit">
         <div class="form-group">
           <label for="title">タイトル</label>
-          <input type="text" id="title" v-model="editableEvent.title" required>
+          <input id="title" v-model="editableEvent.title" type="text" required />
         </div>
         <div class="form-group">
           <label for="start">開始日時</label>
-          <input type="datetime-local" id="start" v-model="editableEvent.start" required>
+          <input id="start" v-model="editableEvent.start" type="datetime-local" required />
         </div>
         <div class="form-group">
           <label for="end">終了日時</label>
-          <input type="datetime-local" id="end" v-model="editableEvent.end" required>
+          <input id="end" v-model="editableEvent.end" type="datetime-local" required />
         </div>
         <div class="modal-actions">
-          <button type="button" class="button-danger" v-if="event.id" @click="handleDelete">削除</button>
+          <button v-if="event.id" type="button" class="button-danger" @click="handleDelete">
+            削除
+          </button>
           <button type="button" class="button-secondary" @click="close">キャンセル</button>
           <button type="submit" class="button-primary">保存</button>
         </div>
@@ -39,9 +41,12 @@ const emit = defineEmits(['close', 'save', 'delete']);
 
 const editableEvent = ref({ ...props.event });
 
-watch(() => props.event, (newEvent) => {
-  editableEvent.value = { ...newEvent };
-});
+watch(
+  () => props.event,
+  (newEvent) => {
+    editableEvent.value = { ...newEvent };
+  }
+);
 
 const handleSubmit = () => {
   emit('save', editableEvent.value);

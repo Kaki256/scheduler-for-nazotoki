@@ -1,8 +1,14 @@
 {
   "name": "nazotoki-scheduler-monorepo",
   "private": true,
+  "packageManager": "pnpm@10.12.4",
   "scripts": {
     "dev": "docker compose up --build",
-    "down": "docker compose down"
+    "down": "docker compose down",
+    "start": "pnpm --filter backend start",
+    "lint": "pnpm --filter frontend lint && pnpm --filter backend lint",
+    "lint:fix": "pnpm --filter frontend lint:fix && pnpm --filter backend lint:fix",
+    "format": "pnpm --filter frontend format && pnpm --filter backend format",
+    "format:fix": "pnpm --filter frontend format:fix && pnpm --filter backend format:fix"
   }
 }
