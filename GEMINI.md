@@ -14,7 +14,7 @@
 
 ### バックエンド
 
-- **技術スタック**: Node.js + Express.js + MySQL/MariaDB
+- **技術スタック**: Node.js + Express.js + MySQL/MariaDB (Execution Environment: Bun)
 - **Web スクレイピング**: Cheerio + Axios による複数サイト対応
 - **API 設計**: RESTful API、適切なエラーハンドリングとレスポンス形式
 
@@ -294,7 +294,10 @@ function navigateToSchedule(eventUrl) {
 
 ### 1. コード品質
 
-- ESLint/Prettier による一貫したコードスタイル
+- ESLint と Prettier を導入し、一貫したコードスタイルを維持します。
+- ルートディレクトリで以下のコマンドを実行することで、フロントエンドおよびバックエンド全体のコードをフォーマット・静的解析できます。
+  - フォーマット: `bun run format`
+  - リンター（自動修正）: `bun run lint`
 - 適切なコメントと型定義
 - ユニットテスト・統合テストの実装
 
@@ -307,6 +310,11 @@ function navigateToSchedule(eventUrl) {
 ### 3. 継続的改善
 
 - ユーザーフィードバックの収集
+- A/B テストによる機能改善
+- 定期的なセキュリティ監査
+
+この実装により、複数のチケット販売サイトに対応した包括的なスケジュール調整システムを提供し、謎解きコミュニティの利便性向上に貢献します。
+収集
 - A/B テストによる機能改善
 - 定期的なセキュリティ監査
 

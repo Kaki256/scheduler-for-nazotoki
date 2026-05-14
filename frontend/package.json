@@ -7,10 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "eslint . --ext .js,.ts,.vue",
-    "lint:fix": "eslint . --ext .js,.ts,.vue --fix",
-    "format": "prettier --check .",
-    "format:fix": "prettier --write ."
+    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix",
+    "format": "prettier --write ."
   },
   "dependencies": {
     "@fullcalendar/daygrid": "^6.1.18",
@@ -23,10 +21,10 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.3",
-    "eslint": "^8.57.1",
-    "eslint-config-prettier": "^9.1.2",
-    "eslint-plugin-vue": "^9.33.0",
-    "prettier": "^3.7.4",
+    "eslint": "8",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "9",
+    "prettier": "^3.8.3",
     "vite": "^6.3.5"
   }
 }

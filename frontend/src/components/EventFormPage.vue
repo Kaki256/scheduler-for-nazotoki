@@ -168,12 +168,12 @@ const effectiveMode = computed(() => {
 });
 
 const pageTitle = computed(() =>
-  effectiveMode.value === 'create' ? '新しいイベントを登録' : 'イベント情報を編集'
+  effectiveMode.value === 'create' ? '新しいイベントを登録' : 'イベント情報を編集',
 );
 const pageSubtitle = computed(() =>
   effectiveMode.value === 'create'
     ? 'イベントの情報を入力してください。'
-    : 'イベントの情報を更新してください。'
+    : 'イベントの情報を更新してください。',
 );
 const submitButtonText = computed(() => {
   if (loading.value && !fetchOperationLoading.value) {
@@ -239,7 +239,7 @@ async function fetchEventDataFromUrl() {
     const doc = parser.parseFromString(htmlText, 'text/html');
 
     const astroIslandElement = doc.querySelector(
-      'astro-island[component-export="EventInitializer"]'
+      'astro-island[component-export="EventInitializer"]',
     );
     if (!astroIslandElement) {
       // Fallback for Yodaka event pages
@@ -462,7 +462,7 @@ async function fetchEventDataFromUrl() {
     } else {
       // フォールバックとして infoDetails 直下のキーも試す
       console.warn(
-        '開催地名・住所の元となる location オブジェクトが見つかりませんでした。infoDetails 直下を試します。'
+        '開催地名・住所の元となる location オブジェクトが見つかりませんでした。infoDetails 直下を試します。',
       );
       if (infoDetails.location_name?.[1]) {
         event.locationName = infoDetails.location_name[1];
@@ -509,11 +509,11 @@ async function fetchEventDetails() {
       }
       console.log(
         '[EventFormPage] Reconstructed event URL for fetching details:',
-        reconstructedEventUrl
+        reconstructedEventUrl,
       );
 
       const response = await fetch(
-        `${API_BASE_URL}/events/${encodeURIComponent(reconstructedEventUrl)}`
+        `${API_BASE_URL}/events/${encodeURIComponent(reconstructedEventUrl)}`,
       );
       if (!response.ok) {
         const errorData = await response

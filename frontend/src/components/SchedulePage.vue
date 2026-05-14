@@ -12,11 +12,11 @@
           class="button button-primary summary-link"
           >出欠状況ページに行く</router-link
         >
+        <router-link to="/my-calendar" class="button button-secondary"
+          >マイカレンダーを開く</router-link
+        >
         <router-link to="/events" class="button button-secondary back-to-list-link"
           >イベント一覧ページに行く</router-link
-        >
-        <router-link to="/my-calendar" class="button button-secondary back-to-list-link"
-          >マイカレンダーを開く</router-link
         >
       </div>
     </div>
@@ -144,7 +144,7 @@
                     'empty-cell': day.empty,
                     'has-slots': day.isClickable,
                     'not-in-event-range': !day.isWithinEventRange && !day.empty && !day.hasSlots,
-                    'today': day.isToday,
+                    today: day.isToday,
                     'no-slots-in-range-diagonal': day.isWithinEventRange && !day.hasSlots, // 追加
                   }"
                   :style="getDayStyle(day)"
@@ -345,7 +345,7 @@
                     class="user-status-selector clickable"
                     :class="
                       getUserSlotClass(
-                        bulkWeekdaySlotSelections[selectedWeekdayForBulkModal]?.[slotRep.timeHHMM]
+                        bulkWeekdaySlotSelections[selectedWeekdayForBulkModal]?.[slotRep.timeHHMM],
                       )
                     "
                     role="button"
@@ -361,7 +361,7 @@
                   >
                     {{
                       formatUserSelectionStatus(
-                        bulkWeekdaySlotSelections[selectedWeekdayForBulkModal]?.[slotRep.timeHHMM]
+                        bulkWeekdaySlotSelections[selectedWeekdayForBulkModal]?.[slotRep.timeHHMM],
                       )
                     }}
                   </div>
@@ -438,8 +438,12 @@
 </template>
 
 <script setup>
-import { computed, ref, reactive, watch, onMounted, onUnmounted } from 'vue';
+import { computed, ref, reactive, watch, onMounted, nextTick, onUnmounted } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
+
+const route = useRoute();
+const router = useRouter();
 
 const props = defineProps({
   orgSlug: { type: String, required: true },
@@ -850,6 +854,15 @@ async function fetchAllPersonalSchedules() {
   }
 }
 
+const googleMapsUrl = computed(() => {
+  if (!locationAddressRef.value) return '#';
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(locationAddressRef.value)}`;
+});
+
+function openGoogleMaps() {
+  if (locationAddressRef.value) window.open(googleMapsUrl.value, '_blank', 'noopener,noreferrer');
+}
+
 async function fetchScheduleData(eventUrl, dateFrom, dateTo, locationUid) {
   const isYodaka = eventUrl && eventUrl.startsWith('https://yodaka.info/');
   if (!eventUrl || !dateFrom || !dateTo || (!locationUid && !isYodaka)) {
@@ -902,7 +915,7 @@ async function fetchScheduleData(eventUrl, dateFrom, dateTo, locationUid) {
         });
         for (const dateKey in tempSchedule)
           tempSchedule[dateKey].sort(
-            (a, b) => new Date(a.originalStartTimeUTC) - new Date(b.originalStartTimeUTC)
+            (a, b) => new Date(a.originalStartTimeUTC) - new Date(b.originalStartTimeUTC),
           );
         schedule.value = tempSchedule;
       } else {
@@ -958,14 +971,14 @@ async function fetchEventDetailsBySlugs(orgSlug, eventSlug) {
         eventUrlRef.value,
         currentStartDate.value,
         currentEndDate.value,
-        locationUidRef.value
+        locationUidRef.value,
       );
     }
     initialLoadDone.value = true;
   } catch (error) {
     console.error(
       '[EventDetailsFetch] Error fetching event details by reconstructed eventUrl:',
-      error
+      error,
     );
     errorMessage.value = `イベント詳細の取得に失敗しました: ${error.message}`;
   }
@@ -994,7 +1007,7 @@ onUnmounted(() => {
 
 watch(
   () => [props.orgSlug, props.eventSlug],
-  async (newSlugs) => {
+  async (newSlugs, oldSlugs) => {
     const [newOrgSlug, newEventSlug] = newSlugs;
     if (newOrgSlug && newEventSlug) {
       await fetchEventDetailsBySlugs(newOrgSlug, newEventSlug);
@@ -1002,7 +1015,7 @@ watch(
         await loadUserStatus(username.value, eventUrlRef.value);
     }
   },
-  { immediate: false }
+  { immediate: false },
 );
 
 watch(username, async (newUsername, oldUsername) => {
@@ -1027,7 +1040,7 @@ async function loadUserStatus(user, url) {
   errorMessage.value = '';
   try {
     const response = await axios.get(`${API_BASE_URL}/load-my-status`, {
-      params: { username: user, eventUrl: url },
+      params: { event_url: url },
     });
     if (response.data && Array.isArray(response.data)) {
       Object.keys(userSelection).forEach((key) => delete userSelection[key]);
@@ -1123,7 +1136,7 @@ const slotsForModal = computed(() => {
   )
     return [];
   return [...schedule.value[selectedDateForModal.value]].sort(
-    (a, b) => new Date(a.originalStartTimeUTC) - new Date(b.originalStartTimeUTC)
+    (a, b) => new Date(a.originalStartTimeUTC) - new Date(b.originalStartTimeUTC),
   );
 });
 
@@ -1133,7 +1146,7 @@ const calendarMonths = computed(() => {
   let loopStartDate = new Date(currentStartDate.value + 'T00:00:00Z');
   const loopEndDate = new Date(currentEndDate.value + 'T00:00:00Z');
   let currentDateIterator = new Date(
-    Date.UTC(loopStartDate.getUTCFullYear(), loopStartDate.getUTCMonth(), 1)
+    Date.UTC(loopStartDate.getUTCFullYear(), loopStartDate.getUTCMonth(), 1),
   );
   while (
     currentDateIterator.getUTCFullYear() < loopEndDate.getUTCFullYear() ||
@@ -1228,7 +1241,7 @@ const getDayStyle = (dayObject) => {
   const slotsForDay = schedule.value[dateStr]
     ? [...schedule.value[dateStr]].sort(
         (a, b) =>
-          new Date(a.originalStartTimeUTC).getTime() - new Date(b.originalStartTimeUTC).getTime()
+          new Date(a.originalStartTimeUTC).getTime() - new Date(b.originalStartTimeUTC).getTime(),
       )
     : [];
   if (slotsForDay.length === 0)

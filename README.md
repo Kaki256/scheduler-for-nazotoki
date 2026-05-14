@@ -47,8 +47,9 @@
 
 ## 🏗️ システム構成
 
-```
+```txt
 scheduler-for-nazotoki/
+├── docs/              # 設計書・API仕様・データモデル等のドキュメント
 ├── frontend/          # Vue.js フロントエンド
 ├── backend/           # Express.js バックエンド
 └── docker-compose.yml # Docker構成
@@ -68,26 +69,33 @@ scheduler-for-nazotoki/
 ### Docker を使用したセットアップ (推奨)
 
 #### 1. 前提条件
+
 - Docker
 - Docker Compose
 
 #### 2. リポジトリのクローン
+
 ```bash
 git clone https://github.com/Kaki256/scheduler-for-nazotoki.git
 cd scheduler-for-nazotoki
 ```
 
 #### 3. 環境変数の設定
+
 プロジェクトのルートにある `.env.example` ファイルをコピーして `.env` ファイルを作成します。
+
 ```bash
 cp .env.example .env
 ```
+
 その後、`.env` ファイルを編集し、ご自身の環境に合わせて値を設定してください。特に `MYSQL_ROOT_PASSWORD` などの重要な変数を設定する必要があります。
 
 #### 4. アプリケーションの起動
+
 ```bash
 docker-compose up --build -d
 ```
+
 - フロントエンドは `http://localhost:5173` で利用可能になります。
 - バックエンドAPIは `http://localhost:3001` でリッスンします。
 - Adminer（データベース管理ツール）は `http://localhost:8080` でアクセスできます。
@@ -95,32 +103,49 @@ docker-compose up --build -d
 ### 手動セットアップ
 
 #### 1. 前提条件
+<<<<<<< HEAD
 - Node.js (v18以上推奨。`corepack enable` で pnpm を有効化してください)
+=======
+
+- Node.js (v14以上)
+>>>>>>> e3d3754 (Bun に変更)
 - MySQL
 - Git
 
 #### 2. インストール
+
 ```bash
 # リポジトリのクローン
 git clone https://github.com/Kaki256/scheduler-for-nazotoki.git
 cd scheduler-for-nazotoki
-corepack enable pnpm
 
 # ワークスペース一括インストール
-pnpm install
+bun install
 ```
 
 #### 3. 環境設定
+
 - **バックエンド**: データベース接続情報などを設定します。
 - **フロントエンド**: `.env` ファイルを作成し、`VITE_API_BASE_URL=http://localhost:3001/api` のようにAPIサーバーのURLを設定します。
 
 #### 4. 起動
+
 ```bash
+<<<<<<< HEAD
 # バックエンドサーバー起動
 pnpm start
 
 # フロントエンド開発サーバー起動
 pnpm --filter frontend dev
+=======
+# バックエンドサーバー起動 (別ターミナル)
+cd backend
+bun run start
+
+# フロントエンド開発サーバー起動
+cd frontend
+bun run dev
+>>>>>>> e3d3754 (Bun に変更)
 ```
 
 ## 🧹 Lint / Format
@@ -162,4 +187,3 @@ pnpm --filter frontend dev
 **開発者**: [@Kaki256](https://github.com/Kaki256)
 
 **リポジトリ**: [scheduler-for-nazotoki](https://github.com/Kaki256/scheduler-for-nazotoki)
-

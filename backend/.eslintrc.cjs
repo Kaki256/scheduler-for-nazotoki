@@ -7,8 +7,10 @@ module.exports = {
   extends: ['eslint:recommended', 'prettier'],
   parserOptions: {
     ecmaVersion: 'latest',
+    sourceType: 'module',
   },
   rules: {
-    'no-console': 'off',
+    'no-unused-vars': 'off',
+    'no-useless-escape': 'off',
   },
 };

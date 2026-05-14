@@ -1,13 +1,13 @@
-FROM node:18
+FROM oven/bun:latest
 
 WORKDIR /usr/src/app
 
-COPY package*.json ./
+COPY package.json bun.lock* ./
 
-RUN npm install
+RUN bun install
 
 COPY . .
 
 EXPOSE 5173
 
-CMD ["npm", "run", "dev", "--", "--host"]
+CMD ["bun", "run", "dev", "--host"]

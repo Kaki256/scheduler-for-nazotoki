@@ -45,7 +45,7 @@ watch(
   () => props.event,
   (newEvent) => {
     editableEvent.value = { ...newEvent };
-  }
+  },
 );
 
 const handleSubmit = () => {

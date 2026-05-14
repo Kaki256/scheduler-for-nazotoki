@@ -133,7 +133,7 @@ app.use((req, res, next) => {
   } else {
     console.log(
       '[AuthAPI] Username not found in expected headers. All received headers:',
-      JSON.stringify(req.headers, null, 2)
+      JSON.stringify(req.headers, null, 2),
     ); // pretty print
   }
 
@@ -153,7 +153,7 @@ const FRONTEND_BASE_URL = isProduction
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  `${BACKEND_BASE_URL}/api/auth/google/callback`
+  `${BACKEND_BASE_URL}/api/auth/google/callback`,
 );
 
 app.get('/api/auth/google', (req, res) => {
@@ -300,7 +300,7 @@ app.get('/api/events', async (req, res) => {
       'Fetched events with submission status for user:',
       currentUsername,
       'Formatted events:',
-      formattedRows.length
+      formattedRows.length,
     );
   } catch (dbError) {
     console.error('DB Error fetching events with submission status:', dbError);
@@ -326,7 +326,7 @@ app.get('/api/events/:eventUrlEncoded', async (req, res) => {
     // Modify query to exclude logically deleted events
     const [rows] = await dbPool.execute(
       'SELECT event_url, name, start_date, end_date, location_uid, max_participants, estimated_time, location_name, location_address FROM events WHERE event_url = ? AND deleted_at IS NULL',
-      [eventUrl]
+      [eventUrl],
     );
     if (rows.length === 0) {
       return res.status(404).json({ error: '指定されたイベントURLが見つかりません。' });
@@ -381,7 +381,7 @@ app.post('/api/events', async (req, res) => {
     // Check if an event with the same normalizedEventUrl already exists
     const [existingEvents] = await connection.execute(
       'SELECT event_url, deleted_at FROM events WHERE event_url = ?',
-      [normalizedEventUrl]
+      [normalizedEventUrl],
     );
 
     if (existingEvents.length > 0) {
@@ -405,7 +405,7 @@ app.post('/api/events', async (req, res) => {
 
         const [updatedEventRows] = await connection.execute(
           'SELECT event_url, name, start_date, end_date, location_uid, max_participants, estimated_time, location_name, location_address FROM events WHERE event_url = ?',
-          [normalizedEventUrl]
+          [normalizedEventUrl],
         );
         const updatedEvent = updatedEventRows[0];
         return res.status(200).json({
@@ -443,7 +443,7 @@ app.post('/api/events', async (req, res) => {
 
       const [newEventRows] = await connection.execute(
         'SELECT event_url, name, start_date, end_date, location_uid, max_participants, estimated_time, location_name, location_address FROM events WHERE event_url = ? AND deleted_at IS NULL',
-        [normalizedEventUrl]
+        [normalizedEventUrl],
       );
       const newEvent = newEventRows[0];
       return res.status(201).json({
@@ -525,7 +525,7 @@ app.put('/api/events/:eventUrlEncoded', async (req, res) => {
     // Check if the event to update exists and is not logically deleted
     const [existingEventRows] = await connection.execute(
       'SELECT * FROM events WHERE event_url = ? AND deleted_at IS NULL',
-      [originalEventUrl]
+      [originalEventUrl],
     );
     if (existingEventRows.length === 0) {
       await connection.rollback();
@@ -533,6 +533,8 @@ app.put('/api/events/:eventUrlEncoded', async (req, res) => {
         .status(404)
         .json({ error: '更新対象のイベントが見つからないか、既に削除されています。' });
     }
+    const existingEvent = existingEventRows[0];
+
     const updateFields = {};
     if (name !== undefined) updateFields.name = name;
     if (startDate !== undefined) updateFields.start_date = startDate;
@@ -550,7 +552,7 @@ app.put('/api/events/:eventUrlEncoded', async (req, res) => {
       // Check if the new URL already exists (and is not deleted)
       const [urlConflictRows] = await connection.execute(
         'SELECT event_url FROM events WHERE event_url = ? AND deleted_at IS NULL',
-        [normalizedNewEventUrl]
+        [normalizedNewEventUrl],
       );
       if (urlConflictRows.length > 0) {
         await connection.rollback();
@@ -583,7 +585,7 @@ app.put('/api/events/:eventUrlEncoded', async (req, res) => {
 
     const [updatedEventRows] = await connection.execute(
       'SELECT event_url, name, start_date, end_date, location_uid, max_participants, estimated_time, location_name, location_address FROM events WHERE event_url = ? AND deleted_at IS NULL',
-      [finalEventUrl]
+      [finalEventUrl],
     );
     if (updatedEventRows.length === 0) {
       // This case should ideally not happen if the update was successful and not a URL change to an already deleted one.
@@ -629,7 +631,7 @@ app.delete('/api/events/:eventUrlEncoded', async (req, res) => {
     // Logically delete the event
     const [eventUpdateResult] = await connection.execute(
       'UPDATE events SET deleted_at = CURRENT_TIMESTAMP WHERE event_url = ? AND deleted_at IS NULL',
-      [eventUrl]
+      [eventUrl],
     );
 
     if (eventUpdateResult.affectedRows === 0) {
@@ -642,7 +644,7 @@ app.delete('/api/events/:eventUrlEncoded', async (req, res) => {
     // Logically delete related user_event_selections
     await connection.execute(
       'UPDATE user_event_selections SET deleted_at = CURRENT_TIMESTAMP WHERE event_url = ? AND deleted_at IS NULL',
-      [eventUrl]
+      [eventUrl],
     );
 
     await connection.commit();
@@ -666,8 +668,7 @@ app.get('/api/users/:username/events/:eventUrlEncoded/selections', async (req, r
   let eventUrl;
   try {
     eventUrl = decodeURIComponent(eventUrlEncoded);
-  } catch (error) {
-    console.error('Invalid event URL encoding for selections GET:', eventUrlEncoded, error);
+  } catch (e) {
     return res.status(400).json({ error: 'Invalid event URL encoding.' });
   }
 
@@ -687,7 +688,7 @@ app.get('/api/users/:username/events/:eventUrlEncoded/selections', async (req, r
   try {
     const [rows] = await dbPool.execute(
       'SELECT selections_json FROM user_event_selections WHERE username = ? AND event_url = ? AND deleted_at IS NULL',
-      [username, eventUrl]
+      [username, eventUrl],
     );
     if (rows.length === 0) {
       return res.status(404).json({
@@ -711,8 +712,7 @@ app.post('/api/users/:username/events/:eventUrlEncoded/selections', async (req, 
 
   try {
     eventUrl = decodeURIComponent(eventUrlEncoded);
-  } catch (error) {
-    console.error('Invalid event URL encoding for selections POST:', eventUrlEncoded, error);
+  } catch (e) {
     return res.status(400).json({ error: 'Invalid event URL encoding.' });
   }
 
@@ -728,7 +728,7 @@ app.post('/api/users/:username/events/:eventUrlEncoded/selections', async (req, 
     // First, check if the event itself exists and is not logically deleted
     const [eventRows] = await connection.execute(
       'SELECT event_url FROM events WHERE event_url = ? AND deleted_at IS NULL',
-      [eventUrl]
+      [eventUrl],
     );
     if (eventRows.length === 0) {
       await connection.rollback();
@@ -766,8 +766,7 @@ app.get('/api/events/:eventUrlEncoded/summary', async (req, res) => {
   let eventUrl;
   try {
     eventUrl = decodeURIComponent(eventUrlEncoded);
-  } catch (error) {
-    console.error('Invalid event URL encoding for summary:', eventUrlEncoded, error);
+  } catch (e) {
     return res.status(400).json({ error: 'Invalid event URL encoding.' });
   }
 
@@ -782,7 +781,7 @@ app.get('/api/events/:eventUrlEncoded/summary', async (req, res) => {
     // 1. イベント基本情報を取得 (name, start_date, end_date, location_uid, max_participants, deleted_at, estimated_time, location_name, location_address)
     const [eventRows] = await connection.execute(
       'SELECT name, start_date, end_date, location_uid, max_participants, deleted_at, estimated_time, location_name, location_address FROM events WHERE event_url = ?',
-      [eventUrl]
+      [eventUrl],
     );
 
     if (eventRows.length === 0) {
@@ -806,7 +805,7 @@ app.get('/api/events/:eventUrlEncoded/summary', async (req, res) => {
 
     if (!eventStartDate || !eventEndDate) {
       console.warn(
-        `[SummaryAPI] Event date incomplete for ${eventUrl}. Start: ${eventStartDate}, End: ${eventEndDate}`
+        `[SummaryAPI] Event date incomplete for ${eventUrl}. Start: ${eventStartDate}, End: ${eventEndDate}`,
       );
       return res
         .status(404)
@@ -818,19 +817,19 @@ app.get('/api/events/:eventUrlEncoded/summary', async (req, res) => {
       eventUrl,
       eventStartDate,
       eventEndDate,
-      locationUid
+      locationUid,
     );
     if (allEventTimeSlotsUTC.length === 0) {
       // スロットがない場合でも警告を出し、処理は続ける（ユーザー選択が空である可能性があるため）
       console.warn(
-        `[SummaryAPI] No time slots returned from external API for event: ${eventUrl} between ${eventStartDate} and ${eventEndDate} for location ${locationUid}. This might be expected if the event has no slots in this period.`
+        `[SummaryAPI] No time slots returned from external API for event: ${eventUrl} between ${eventStartDate} and ${eventEndDate} for location ${locationUid}. This might be expected if the event has no slots in this period.`,
       );
     }
 
     // 3. ユーザーごとの出欠情報を取得 (論理削除されていないもののみ)
     const [selectionRows] = await connection.execute(
       'SELECT username, selections_json FROM user_event_selections WHERE event_url = ? AND deleted_at IS NULL',
-      [eventUrl]
+      [eventUrl],
     );
 
     const allUsers = [];
@@ -849,7 +848,7 @@ app.get('/api/events/:eventUrlEncoded/summary', async (req, res) => {
         } else {
           console.warn(
             `[SummaryAPI] selections_json for user ${row.username}, event ${eventUrl} is of unexpected type or null. Value:`,
-            row.selections_json
+            row.selections_json,
           );
           selections = null;
         }
@@ -873,7 +872,7 @@ app.get('/api/events/:eventUrlEncoded/summary', async (req, res) => {
             } else {
               console.warn(
                 `[SummaryAPI] Invalid or incomplete entry in selections_json array for user ${row.username}, event ${eventUrl}. Entry:`,
-                selectionEntry
+                selectionEntry,
               );
             }
           });
@@ -883,14 +882,14 @@ app.get('/api/events/:eventUrlEncoded/summary', async (req, res) => {
           // Or if the database/parsing somehow still produces a non-array object.
           console.log(
             `[SummaryAPI] Processing selections_json as a direct object for user ${row.username}, event ${eventUrl}. This might be due to legacy data or an unexpected structure. Value:`,
-            selections
+            selections,
           );
           for (const [utcDateTime, status] of Object.entries(selections)) {
             if (typeof utcDateTime === 'string' && typeof status === 'string') {
               userSelectionsMap[row.username][utcDateTime] = status;
             } else {
               console.warn(
-                `[SummaryAPI] Invalid entry in selections_json object for user ${row.username}, event ${eventUrl}. Key: ${utcDateTime}, Value: ${status}`
+                `[SummaryAPI] Invalid entry in selections_json object for user ${row.username}, event ${eventUrl}. Key: ${utcDateTime}, Value: ${status}`,
               );
             }
           }
@@ -899,7 +898,7 @@ app.get('/api/events/:eventUrlEncoded/summary', async (req, res) => {
           // This case might occur if JSON.parse failed and returned null, or if row.selections_json was initially null/unexpected.
           console.warn(
             `[SummaryAPI] selections_json for user ${row.username}, event ${eventUrl} is not in a recognized format (array or object) or is null/undefined after processing. Value:`,
-            selections
+            selections,
           );
           // userSelectionsMap[row.username] is already initialized as an empty object, so selections for this user will be empty.
         }
@@ -907,7 +906,7 @@ app.get('/api/events/:eventUrlEncoded/summary', async (req, res) => {
         // JSON.parse の失敗、またはその他の予期せぬエラー
         console.error(
           `[SummaryAPI] Error processing selections_json for user ${row.username}, event ${eventUrl}:`,
-          processError
+          processError,
         );
         // エラーが発生した場合でも、そのユーザーの選択は空として処理を続行する
         if (row.username && !userSelectionsMap[row.username]) {
@@ -971,7 +970,7 @@ app.get('/api/my-calendar', async (req, res) => {
   try {
     const [rows] = await dbPool.execute(
       'SELECT id, title, start_datetime, end_datetime FROM user_schedules WHERE username = ? AND deleted_at IS NULL ORDER BY start_datetime ASC',
-      [username]
+      [username],
     );
     res.json(rows);
   } catch (dbError) {
@@ -998,12 +997,12 @@ app.post('/api/my-calendar', async (req, res) => {
   try {
     const [result] = await dbPool.execute(
       'INSERT INTO user_schedules (username, title, start_datetime, end_datetime) VALUES (?, ?, ?, ?)',
-      [username, title, start_datetime, end_datetime]
+      [username, title, start_datetime, end_datetime],
     );
     const insertId = result.insertId;
     const [rows] = await dbPool.execute(
       'SELECT id, title, start_datetime, end_datetime FROM user_schedules WHERE id = ?',
-      [insertId]
+      [insertId],
     );
     res.status(201).json(rows[0]);
   } catch (dbError) {
@@ -1032,7 +1031,7 @@ app.put('/api/my-calendar/:scheduleId', async (req, res) => {
   try {
     const [result] = await dbPool.execute(
       'UPDATE user_schedules SET title = ?, start_datetime = ?, end_datetime = ? WHERE id = ? AND username = ? AND deleted_at IS NULL',
-      [title, start_datetime, end_datetime, scheduleId, username]
+      [title, start_datetime, end_datetime, scheduleId, username],
     );
 
     if (result.affectedRows === 0) {
@@ -1043,7 +1042,7 @@ app.put('/api/my-calendar/:scheduleId', async (req, res) => {
 
     const [rows] = await dbPool.execute(
       'SELECT id, title, start_datetime, end_datetime FROM user_schedules WHERE id = ?',
-      [scheduleId]
+      [scheduleId],
     );
     res.json(rows[0]);
   } catch (dbError) {
@@ -1064,7 +1063,7 @@ app.delete('/api/my-calendar/:scheduleId', async (req, res) => {
   try {
     const [result] = await dbPool.execute(
       'UPDATE user_schedules SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND username = ? AND deleted_at IS NULL',
-      [scheduleId, username]
+      [scheduleId, username],
     );
 
     if (result.affectedRows === 0) {
@@ -1091,7 +1090,7 @@ app.post('/api/my-calendar/import-google', async (req, res) => {
     // 1. Get user's Google auth tokens from DB
     const [authRows] = await dbPool.execute(
       'SELECT access_token, refresh_token, expiry_date FROM user_google_auth WHERE username = ?',
-      [username]
+      [username],
     );
     if (authRows.length === 0) {
       return res.status(401).json({ error: 'Googleアカウントが連携されていません。' });
@@ -1221,7 +1220,7 @@ app.post('/api/get-schedule', async (req, res) => {
         headers: { 'User-Agent': 'Mozilla/5.0' },
       });
       console.log('[get-schedule] Fetched Yodaka HTML length:', yodakaHtml.length);
-      const match = yodakaHtml.match(/https:\/\/t\.livepocket\.jp\/t\/[A-Za-z0-9-]+/);
+      const match = yodakaHtml.match(/https:\/\/t\.livepocket\.jp\/t\/[A-Za-z0-9\-]+/);
       console.log('[get-schedule] Yodaka regex match:', match);
       if (!match) throw new Error('YodakaページからLivePocket URLが見つかりません');
       const baseLpUrl = match[0];
@@ -1288,24 +1287,24 @@ app.post('/api/get-schedule', async (req, res) => {
   const targetApiUrl = 'https://escape.id/api/showcase/event/slots';
   console.log(
     `[API /get-schedule] Fetching schedule from external API: ${targetApiUrl} with payload:`,
-    JSON.stringify(apiPayload)
+    JSON.stringify(apiPayload),
   );
 
   try {
     const apiResponse = await axios.post(targetApiUrl, apiPayload, {
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json, text/plain, */*',
+        Accept: 'application/json, text/plain, */*',
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
-        'Referer': event_url,
-        'Origin': 'https://escape.id',
+        Referer: event_url,
+        Origin: 'https://escape.id',
       },
     });
 
     console.log(
       '[API /get-schedule] Successfully fetched from external API. Response status:',
-      apiResponse.status
+      apiResponse.status,
     );
 
     if (apiResponse.data && apiResponse.data.dates) {
@@ -1316,12 +1315,12 @@ app.post('/api/get-schedule', async (req, res) => {
   } catch (error) {
     console.error(
       `[API /get-schedule] Error fetching schedule from external API ${targetApiUrl}:`,
-      error.message
+      error.message,
     );
     if (error.response) {
       console.error(
         '[API /get-schedule] External API Error Response Status:',
-        error.response.status
+        error.response.status,
       );
       console.error('[API /get-schedule] External API Error Response Data:', error.response.data);
       res.status(error.response.status || 500).json({
@@ -1369,7 +1368,7 @@ app.post('/api/save-my-status', async (req, res) => {
       `INSERT INTO user_event_selections (event_url, username, selections_json)
        VALUES (?, ?, ?)
        ON DUPLICATE KEY UPDATE selections_json = ?`,
-      [eventUrl, username, selectionsJsonString, selectionsJsonString]
+      [eventUrl, username, selectionsJsonString, selectionsJsonString],
     );
 
     await connection.commit();
@@ -1386,10 +1385,17 @@ app.post('/api/save-my-status', async (req, res) => {
 
 // GET /api/load-my-status - ユーザーの選択を読み込み
 app.get('/api/load-my-status', async (req, res) => {
-  const { username, eventUrl } = req.query;
+  const { event_url: eventUrl } = req.query;
+  const username = req._constructedUsername;
 
-  if (!username || !eventUrl) {
-    return res.status(400).json({ error: 'username and eventUrl are required query parameters.' });
+  if (!username) {
+    return res
+      .status(401)
+      .json({ error: 'Unauthorized: Username could not be determined from headers.' });
+  }
+
+  if (!eventUrl) {
+    return res.status(400).json({ error: 'event_url is a required query parameter.' });
   }
 
   let connection;
@@ -1397,7 +1403,7 @@ app.get('/api/load-my-status', async (req, res) => {
     connection = await dbPool.getConnection();
     const [rows] = await connection.execute(
       'SELECT selections_json FROM user_event_selections WHERE username = ? AND event_url = ?',
-      [username, eventUrl]
+      [username, eventUrl],
     );
     console.log(`[API /load-my-status] Query executed for user: ${username}, event: ${eventUrl}`);
     console.log(`[API /load-my-status] Query result:`, rows);
@@ -1411,7 +1417,7 @@ app.get('/api/load-my-status', async (req, res) => {
         } catch (parseError) {
           console.error(
             `[API /load-my-status] Error parsing selections_json string for user ${username}, event ${eventUrl}:`,
-            parseError
+            parseError,
           );
           console.error(`[API /load-my-status] selections_json string was:`, selectionsJsonValue);
           return res.status(500).json({
@@ -1430,11 +1436,11 @@ app.get('/api/load-my-status', async (req, res) => {
   } catch (error) {
     console.error(
       `[API /load-my-status] DB Error loading user status for user ${username}, event ${eventUrl}:`,
-      error
+      error,
     );
     if (error instanceof SyntaxError) {
       console.error(
-        `[API /load-my-status] Malformed JSON in database for user ${username}, event ${eventUrl}. Error: ${error.message}`
+        `[API /load-my-status] Malformed JSON in database for user ${username}, event ${eventUrl}. Error: ${error.message}`,
       );
       return res
         .status(500)
@@ -1455,7 +1461,7 @@ async function fetchEventSlotsForSummary(eventUrl, dateFrom, dateTo, locationUid
     return [];
   }
 
-  const urlParts = eventUrl.match(/escape\.id\/([^/]+)-org\/e-([^/]+)/);
+  const urlParts = eventUrl.match(/escape\.id\/([^\/]+)-org\/e-([^\/]+)/);
   if (!urlParts || urlParts.length < 3) {
     console.error('[fetchEventSlotsForSummary] Invalid event_url format:', eventUrl);
     return [];
@@ -1475,18 +1481,18 @@ async function fetchEventSlotsForSummary(eventUrl, dateFrom, dateTo, locationUid
   const targetApiUrl = 'https://escape.id/api/showcase/event/slots';
   console.log(
     `[fetchEventSlotsForSummary] Fetching all slots from external API: ${targetApiUrl} with payload:`,
-    JSON.stringify(apiPayload)
+    JSON.stringify(apiPayload),
   );
 
   try {
     const apiResponse = await axios.post(targetApiUrl, apiPayload, {
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json, text/plain, */*',
+        Accept: 'application/json, text/plain, */*',
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
-        'Referer': eventUrl,
-        'Origin': 'https://escape.id',
+        Referer: eventUrl,
+        Origin: 'https://escape.id',
         'Accept-Encoding': 'gzip, deflate, br',
         'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
       },
@@ -1495,29 +1501,29 @@ async function fetchEventSlotsForSummary(eventUrl, dateFrom, dateTo, locationUid
 
     console.log(
       '[fetchEventSlotsForSummary] Successfully fetched from external API. Response status:',
-      apiResponse.status
+      apiResponse.status,
     );
     // Log the entire API response data for inspection
     console.log(
       '[fetchEventSlotsForSummary] API Response Data:',
-      JSON.stringify(apiResponse.data, null, 2)
+      JSON.stringify(apiResponse.data, null, 2),
     );
 
     const allSlotsUTC = [];
     if (apiResponse.data && apiResponse.data.dates && Array.isArray(apiResponse.data.dates)) {
       console.log(
-        `[fetchEventSlotsForSummary] Processing ${apiResponse.data.dates.length} date entries.`
+        `[fetchEventSlotsForSummary] Processing ${apiResponse.data.dates.length} date entries.`,
       );
       apiResponse.data.dates.forEach((dateEntry, dateIndex) => {
         console.log(
           `[fetchEventSlotsForSummary] Date Entry ${dateIndex}:`,
-          JSON.stringify(dateEntry, null, 2)
+          JSON.stringify(dateEntry, null, 2),
         );
         if (dateEntry.slots && Array.isArray(dateEntry.slots)) {
           console.log(
-            `[fetchEventSlotsForSummary] Date Entry ${dateIndex} has ${dateEntry.slots.length} slots.`
+            `[fetchEventSlotsForSummary] Date Entry ${dateIndex} has ${dateEntry.slots.length} slots.`,
           );
-          dateEntry.slots.forEach((slot) => {
+          dateEntry.slots.forEach((slot, slotIndex) => {
             // console.log(`[fetchEventSlotsForSummary] Date Entry ${dateIndex}, Slot ${slotIndex}:`, JSON.stringify(slot)); // This log seems to exist based on your output
             let dateTimeUTC = null;
             if (typeof slot === 'string') {
@@ -1526,11 +1532,11 @@ async function fetchEventSlotsForSummary(eventUrl, dateFrom, dateTo, locationUid
               // Added DEBUG logs to investigate slot.startAt
               if (Object.prototype.hasOwnProperty.call(slot, 'startAt')) {
                 console.log(
-                  `[DEBUG] slot.startAt raw value: "${slot.startAt}", type: ${typeof slot.startAt}`
+                  `[DEBUG] slot.startAt raw value: "${slot.startAt}", type: ${typeof slot.startAt}`,
                 );
               } else {
                 console.log(
-                  `[DEBUG] slot.startAt property does not exist or is not an own property.`
+                  `[DEBUG] slot.startAt property does not exist or is not an own property.`,
                 );
               }
 
@@ -1554,7 +1560,7 @@ async function fetchEventSlotsForSummary(eventUrl, dateFrom, dateTo, locationUid
               ) {
                 dateTimeUTC = slot.startAt;
                 console.log(
-                  `[DEBUG] Successfully assigned slot.startAt to dateTimeUTC. Value: "${dateTimeUTC}"`
+                  `[DEBUG] Successfully assigned slot.startAt to dateTimeUTC. Value: "${dateTimeUTC}"`,
                 );
               } else if (slot.time) {
                 dateTimeUTC = slot.time;
@@ -1572,7 +1578,7 @@ async function fetchEventSlotsForSummary(eventUrl, dateFrom, dateTo, locationUid
             } else {
               console.log(
                 '[fetchEventSlotsForSummary] Could not extract UTC datetime from slot object:',
-                JSON.stringify(slot)
+                JSON.stringify(slot),
               );
               // Add a log here if startAt was present but didn't meet the new stricter condition
               if (
@@ -1582,7 +1588,7 @@ async function fetchEventSlotsForSummary(eventUrl, dateFrom, dateTo, locationUid
                 !(typeof slot.startAt === 'string' && slot.startAt.length > 0)
               ) {
                 console.log(
-                  `[DEBUG] slot.startAt was present but did not meet string/length criteria. Value: "${slot.startAt}", Type: ${typeof slot.startAt}`
+                  `[DEBUG] slot.startAt was present but did not meet string/length criteria. Value: "${slot.startAt}", Type: ${typeof slot.startAt}`,
                 );
               }
             }
@@ -1592,32 +1598,32 @@ async function fetchEventSlotsForSummary(eventUrl, dateFrom, dateTo, locationUid
     }
     console.log(
       '[fetchEventSlotsForSummary] Final extracted UTC slots:',
-      JSON.stringify(allSlotsUTC)
+      JSON.stringify(allSlotsUTC),
     );
     return allSlotsUTC.sort();
   } catch (error) {
     console.error(
-      `[fetchEventSlotsForSummary] Error fetching slots from external API ${targetApiUrl}. Payload: ${JSON.stringify(apiPayload)}`
+      `[fetchEventSlotsForSummary] Error fetching slots from external API ${targetApiUrl}. Payload: ${JSON.stringify(apiPayload)}`,
     );
     if (error.response) {
       console.error(
         '[fetchEventSlotsForSummary] External API Error Response Status:',
-        error.response.status
+        error.response.status,
       );
       console.error(
         '[fetchEventSlotsForSummary] External API Error Response Data:',
-        JSON.stringify(error.response.data)
+        JSON.stringify(error.response.data),
       );
       console.error(
         '[fetchEventSlotsForSummary] External API Error Response Headers:',
-        JSON.stringify(error.response.headers)
+        JSON.stringify(error.response.headers),
       );
     } else if (error.request) {
       console.error(
         '[fetchEventSlotsForSummary] External API No response received. Error Code:',
         error.code,
         'Error Message:',
-        error.message
+        error.message,
       );
     } else {
       console.error('[fetchEventSlotsForSummary] Error setting up request:', error.message);
@@ -1625,13 +1631,10 @@ async function fetchEventSlotsForSummary(eventUrl, dateFrom, dateTo, locationUid
     try {
       console.error(
         '[fetchEventSlotsForSummary] Full error object (stringified):',
-        JSON.stringify(error, Object.getOwnPropertyNames(error))
+        JSON.stringify(error, Object.getOwnPropertyNames(error)),
       );
-    } catch (stringifyError) {
-      console.error(
-        '[fetchEventSlotsForSummary] Could not stringify full error object:',
-        stringifyError
-      );
+    } catch (e) {
+      console.error('[fetchEventSlotsForSummary] Could not stringify full error object:', error);
     }
     return [];
   }
@@ -1641,17 +1644,18 @@ async function fetchEventSlotsForSummary(eventUrl, dateFrom, dateTo, locationUid
 async function fetchScheduleFromLivePocket(eventUrl) {
   console.log('[LivePocket] fetchScheduleFromLivePocket start:', eventUrl);
   const dateMap = {};
+  let page = 1;
 
   // Add headers to avoid 403 Forbidden
   const headers = {
     'User-Agent':
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    'Accept':
+    Accept:
       'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
     'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
     'Accept-Encoding': 'gzip, deflate, br',
     'Cache-Control': 'no-cache',
-    'Pragma': 'no-cache',
+    Pragma: 'no-cache',
     'Sec-Ch-Ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
     'Sec-Ch-Ua-Mobile': '?0',
     'Sec-Ch-Ua-Platform': '"Windows"',
@@ -1662,7 +1666,8 @@ async function fetchScheduleFromLivePocket(eventUrl) {
     'Upgrade-Insecure-Requests': '1',
   };
 
-  for (let page = 1; ; page += 1) {
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
     const pagedUrl = `${eventUrl}?sort=1&page=${page}`;
     console.log('[LivePocket] Fetching paged URL:', pagedUrl);
 
@@ -1728,6 +1733,7 @@ async function fetchScheduleFromLivePocket(eventUrl) {
       console.log('[LivePocket] Pager links found:', pagerLinks);
       const hasNext = pagerLinks.some((href) => href && href.includes(`page=${page + 1}`));
       if (!hasNext) break;
+      page++;
 
       // Add delay between requests to avoid rate limiting
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -1769,7 +1775,7 @@ async function fetchScheduleFromLivePocket(eventUrl) {
   console.log(
     '[LivePocket] fetchScheduleFromLivePocket result count:',
     schedules.length,
-    schedules
+    schedules,
   );
   return schedules;
 }
@@ -1799,7 +1805,7 @@ async function fetchScheduleFromScrap(eventUrl) {
         line
           .replace(/^[^：]+：/, '')
           .split('/')
-          .map((t) => t.trim())
+          .map((t) => t.trim()),
       )
       .flat()
       .filter((t) => t);
@@ -1807,6 +1813,320 @@ async function fetchScheduleFromScrap(eventUrl) {
   }
   return schedules;
 }
+
+// Catch-all route - MOVED HERE to be after all specific API routes
+// ★★★ START: Team Calculation API Endpoints ★★★
+app.post('/api/calculate-teams', async (req, res) => {
+  const {
+    event_url,
+    participatingUsers,
+    maxParticipants,
+    fixedTeamsFromUI,
+    allEventTimeSlotsUTC,
+    userSelectionsMap,
+    vacancyStatusMap,
+  } = req.body;
+
+  if (!participatingUsers || !maxParticipants || !allEventTimeSlotsUTC || !userSelectionsMap) {
+    return res.status(400).json({ error: 'Missing required parameters.' });
+  }
+
+  const users = participatingUsers;
+  const numTeamsToForm = Math.ceil(users.length / maxParticipants);
+
+  if (numTeamsToForm === 0 || users.length === 0) {
+    return res.json({ combinations: [] });
+  }
+
+  // --- Helper Functions (migrated from frontend) ---
+  function getUserRankScore(username) {
+    const userRanks = {
+      Pina641: 1,
+      Kasyu: 1,
+      soramea: 1,
+      inutamago_dogegg: 2,
+      Dye: 2,
+      soucy: 2,
+      test: 1,
+      test2: 2,
+      test7: 2,
+      test8: 2,
+    };
+    const rank = userRanks[username];
+    if (rank === 1) return 3;
+    if (rank === 2) return 1;
+    return 0;
+  }
+
+  function getVacancyScore(vacancyType) {
+    const scores = { MANY: 5, FEW: 1, FULL: 0, NOT_IN_SALES_PERIOD: 0 };
+    return scores[vacancyType] || 0;
+  }
+
+  function formatFixedTeamsForSearch(teamsInput, teamSize) {
+    const teams = Array.isArray(teamsInput) ? teamsInput : [];
+    return teams.map((teamArray) => {
+      const currentTeam = Array.isArray(teamArray) ? teamArray : [];
+      const formattedTeam = [];
+      for (let i = 0; i < teamSize; i++) {
+        if (
+          i < currentTeam.length &&
+          currentTeam[i] != null &&
+          currentTeam[i].toString().trim() !== ''
+        ) {
+          formattedTeam.push(currentTeam[i].toString());
+        } else {
+          formattedTeam.push('*');
+        }
+      }
+      return formattedTeam;
+    });
+  }
+
+  function doesStructureMatchPatterns(generatedStructure, patterns) {
+    if (generatedStructure.length !== patterns.length) return false;
+    const structureTeamsSets = generatedStructure.map((t) => new Set(t));
+    const patternDetails = patterns.map((pTeam) => ({
+      players: new Set(pTeam.filter((p) => p !== '*')),
+      wildcards: pTeam.filter((p) => p === '*').length,
+    }));
+
+    const numTeams = patterns.length;
+    const usedStructureTeams = new Array(numTeams).fill(false);
+
+    function findMatch(patternIndex) {
+      if (patternIndex === numTeams) return true;
+      const currentPattern = patternDetails[patternIndex];
+      for (let structIdx = 0; structIdx < numTeams; structIdx++) {
+        if (usedStructureTeams[structIdx]) continue;
+        const currentStructTeamSet = structureTeamsSets[structIdx];
+
+        let allPatternPlayersFound = true;
+        for (const player of currentPattern.players) {
+          if (!currentStructTeamSet.has(player)) {
+            allPatternPlayersFound = false;
+            break;
+          }
+        }
+        if (!allPatternPlayersFound) continue;
+        if (
+          currentStructTeamSet.size < currentPattern.players.size ||
+          currentStructTeamSet.size > currentPattern.players.size + currentPattern.wildcards
+        )
+          continue;
+
+        let containsForeignFixedPlayer = false;
+        for (const member of currentStructTeamSet) {
+          if (currentPattern.players.has(member)) continue;
+          for (let otherPIdx = 0; otherPIdx < numTeams; otherPIdx++) {
+            if (otherPIdx === patternIndex) continue;
+            if (patternDetails[otherPIdx].players.has(member)) {
+              containsForeignFixedPlayer = true;
+              break;
+            }
+          }
+          if (containsForeignFixedPlayer) break;
+        }
+        if (containsForeignFixedPlayer) continue;
+
+        usedStructureTeams[structIdx] = true;
+        if (findMatch(patternIndex + 1)) return true;
+        usedStructureTeams[structIdx] = false;
+      }
+      return false;
+    }
+    return findMatch(0);
+  }
+
+  // --- Main Logic ---
+  let teamStructurePattern = null;
+  if (fixedTeamsFromUI && fixedTeamsFromUI.length > 0) {
+    let patternInput = JSON.parse(JSON.stringify(fixedTeamsFromUI));
+    while (patternInput.length < numTeamsToForm) patternInput.push([]);
+    if (patternInput.length > numTeamsToForm) patternInput = patternInput.slice(0, numTeamsToForm);
+    teamStructurePattern = formatFixedTeamsForSearch(patternInput, maxParticipants);
+  }
+
+  const resultStructuresSet = new Set();
+  const n = users.length;
+  const teams = Array(numTeamsToForm)
+    .fill(null)
+    .map(() => []);
+
+  const startTime = Date.now();
+  const TIMEOUT_MS = 5000; // 5 seconds
+  let timeoutReached = false;
+
+  function normalizeTeamStructure(structure) {
+    const normalizedStruct = structure.map((team) => [...team].sort());
+    normalizedStruct.sort((teamA, teamB) =>
+      JSON.stringify(teamA).localeCompare(JSON.stringify(teamB)),
+    );
+    return normalizedStruct;
+  }
+
+  function backtrack(userIndex) {
+    if (timeoutReached) return;
+    if (Date.now() - startTime > TIMEOUT_MS) {
+      timeoutReached = true;
+      return;
+    }
+
+    if (userIndex === n) {
+      const currentGeneratedTeams = teams.map((team) => [...team]);
+      if (
+        teamStructurePattern &&
+        !doesStructureMatchPatterns(currentGeneratedTeams, teamStructurePattern)
+      ) {
+        return;
+      }
+      const normalized = normalizeTeamStructure(currentGeneratedTeams);
+      resultStructuresSet.add(JSON.stringify(normalized));
+      return;
+    }
+
+    const currentUser = users[userIndex];
+    for (let i = 0; i < numTeamsToForm; i++) {
+      if (teams[i].length < maxParticipants) {
+        teams[i].push(currentUser);
+        backtrack(userIndex + 1);
+        teams[i].pop();
+        if (timeoutReached) return;
+      }
+      if (teams[i].length === 0 && !teamStructurePattern) break;
+    }
+  }
+
+  backtrack(0);
+
+  const allPossibleStructures = Array.from(resultStructuresSet).map((s) => JSON.parse(s));
+
+  if (allPossibleStructures.length === 0) {
+    return res.json({ combinations: [], timeoutReached });
+  }
+
+  // --- Evaluate and Score ---
+  const evaluatedCombinations = allPossibleStructures.map((structure) => {
+    let minBestSlotScoreForStructure = Infinity;
+    let minTeamRankLevelForStructure = Infinity;
+    let minOverallVacancyScoreForStructure = Infinity;
+
+    const teamsInStructureDetails = structure.map((teamMembers) => {
+      let teamRankLevel = 0;
+      teamMembers.forEach((member) => {
+        teamRankLevel += getUserRankScore(member);
+      });
+      minTeamRankLevelForStructure = Math.min(minTeamRankLevelForStructure, teamRankLevel);
+
+      if (teamMembers.length === 0) {
+        return {
+          members: [],
+          bestSlotsDetails: [],
+          scoreInBestSlot: 0,
+          teamRankLevel: 0,
+          maxVacancyScoreInBestSlots: 0,
+        };
+      }
+
+      let maxScoreForTeam = -1;
+      let bestSlotsForTeamUtc = [];
+
+      allEventTimeSlotsUTC.forEach((slotUtc) => {
+        let goingCount = 0;
+        let maybeCount = 0;
+        teamMembers.forEach((member) => {
+          const status = userSelectionsMap[member]?.[slotUtc];
+          if (status === 'available' || status === 'going') goingCount++;
+          else if (status === 'maybe') maybeCount++;
+        });
+
+        const currentSlotScore =
+          teamMembers.length > 0
+            ? (5 * goingCount +
+                2 * maybeCount -
+                100 * (teamMembers.length - goingCount - maybeCount)) /
+              teamMembers.length
+            : 0;
+
+        if (currentSlotScore > maxScoreForTeam) {
+          maxScoreForTeam = currentSlotScore;
+          bestSlotsForTeamUtc = [slotUtc];
+        } else if (currentSlotScore === maxScoreForTeam && maxScoreForTeam !== -1) {
+          bestSlotsForTeamUtc.push(slotUtc);
+        }
+      });
+
+      const bestSlotsDetails = bestSlotsForTeamUtc.map((slotUtc) => {
+        const d = new Date(slotUtc);
+        return {
+          utc: slotUtc,
+          dateLabel: d.toLocaleDateString('ja-JP', {
+            month: 'short',
+            day: 'numeric',
+            weekday: 'short',
+            timeZone: 'Asia/Tokyo',
+          }),
+          timeLabel: d.toLocaleTimeString('ja-JP', {
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'Asia/Tokyo',
+          }),
+        };
+      });
+
+      const actualScoreInBestSlot = maxScoreForTeam === -1 ? 0 : maxScoreForTeam;
+      minBestSlotScoreForStructure = Math.min(minBestSlotScoreForStructure, actualScoreInBestSlot);
+
+      let maxVacancyScoreForTeamInBestSlots = 0;
+      if (bestSlotsDetails.length > 0) {
+        bestSlotsDetails.forEach((slotDetail) => {
+          const vacancyType =
+            vacancyStatusMap && vacancyStatusMap[slotDetail.utc]
+              ? vacancyStatusMap[slotDetail.utc]
+              : 'MANY';
+          const score = getVacancyScore(vacancyType);
+          if (score > maxVacancyScoreForTeamInBestSlots) maxVacancyScoreForTeamInBestSlots = score;
+        });
+      }
+
+      return {
+        members: teamMembers,
+        bestSlotsDetails: bestSlotsDetails,
+        scoreInBestSlot: actualScoreInBestSlot,
+        teamRankLevel: teamRankLevel,
+        maxVacancyScoreInBestSlots: maxVacancyScoreForTeamInBestSlots,
+      };
+    });
+
+    if (teamsInStructureDetails.length > 0) {
+      minOverallVacancyScoreForStructure = Math.min(
+        ...teamsInStructureDetails.map((t) => t.maxVacancyScoreInBestSlots),
+      );
+    } else {
+      minOverallVacancyScoreForStructure = 0;
+    }
+
+    return {
+      structureDetails: teamsInStructureDetails,
+      overallSlotScore:
+        minBestSlotScoreForStructure === Infinity ? 0 : minBestSlotScoreForStructure,
+      minTeamRankLevel:
+        minTeamRankLevelForStructure === Infinity ? 0 : minTeamRankLevelForStructure,
+      overallVacancyScore:
+        minOverallVacancyScoreForStructure === Infinity ? 0 : minOverallVacancyScoreForStructure,
+    };
+  });
+
+  evaluatedCombinations.sort((a, b) => {
+    if (b.overallVacancyScore !== a.overallVacancyScore)
+      return b.overallVacancyScore - a.overallVacancyScore;
+    if (b.minTeamRankLevel !== a.minTeamRankLevel) return b.minTeamRankLevel - a.minTeamRankLevel;
+    return b.overallSlotScore - a.overallSlotScore;
+  });
+
+  res.json({ combinations: evaluatedCombinations.slice(0, 100), timeoutReached });
+});
+// ★★★ END: Team Calculation API Endpoints ★★★
 
 // Catch-all route - MOVED HERE to be after all specific API routes
 app.get(/^.*$/, (req, res) => {

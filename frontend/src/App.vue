@@ -17,7 +17,9 @@
 
     <footer class="app-footer">
       <div class="footer-inner">
-        <p class="footer-text">イベント選択 → 参加入力 → 結果確認 → マイカレンダー の流れをサポートします。</p>
+        <p class="footer-text">
+          イベント選択 → 参加入力 → 結果確認 → マイカレンダー の流れをサポートします。
+        </p>
         <div class="footer-links">
           <router-link to="/events" class="footer-link">イベント一覧</router-link>
           <router-link to="/events/new" class="footer-link">新規登録</router-link>
@@ -35,7 +37,12 @@
   flex-direction: column;
   background: #f8fafc;
   color: #0f172a;
-  font-family: "Inter", "Noto Sans JP", system-ui, -apple-system, sans-serif;
+  font-family:
+    'Inter',
+    'Noto Sans JP',
+    system-ui,
+    -apple-system,
+    sans-serif;
 }
 
 .app-header {
@@ -76,7 +83,9 @@
   color: #0f172a;
   text-decoration: none;
   font-weight: 600;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
 }
 
 .nav-link:hover,

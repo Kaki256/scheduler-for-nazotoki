@@ -7,9 +7,6 @@
           <button class="button button-primary schedule-link mr-2" @click="goToSchedulePage">
             日程調整ページに行く
           </button>
-          <button class="button button-secondary mr-2" @click="goToMyCalendar">
-            マイカレンダーを開く
-          </button>
           <button class="button button-secondary event-list-link" @click="goBack">
             イベント一覧ページに行く
           </button>
@@ -222,7 +219,11 @@
           d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
         ></path>
       </svg>
-      <p class="text-lg text-gray-600 mt-4">チーム編成案を生成中...</p>
+      <p class="text-lg text-gray-600 mt-4">
+        最適な組み合わせを探索しています...<br /><span class="text-sm text-gray-500"
+          >（参加者が多い場合、最大5〜10秒ほどかかる場合があります）</span
+        >
+      </p>
     </div>
 
     <div
@@ -320,8 +321,8 @@
               <p class="text-sm text-gray-700 font-semibold">最適日時:</p>
               <ul class="text-xs text-gray-600 list-none pl-1">
                 <li
-                  v-for="(slotDetail, slotIdx) in team.bestSlotsDetails"
-                  :key="slotIdx"
+                  v-for="slotDetail in team.bestSlotsDetails"
+                  :key="slotDetail.utc"
                   class="flex items-center"
                 >
                   <span
@@ -398,7 +399,7 @@
 
 <script setup>
 import { ref, onMounted, computed } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 
 const props = defineProps({
@@ -406,6 +407,7 @@ const props = defineProps({
   eventSlug: { type: String, required: true },
 });
 
+const route = useRoute();
 const router = useRouter();
 
 const loadingInitialData = ref(false);
@@ -443,16 +445,14 @@ const userRanks = {
   test8: 2,
 };
 
-function getUserRankScore(username) {
-  const rank = userRanks[username];
-  if (rank === 1) return 3;
-  if (rank === 2) return 1;
-  return 0;
-}
-
 // Pagination state
 const currentPage = ref(1);
 const itemsPerPage = ref(10);
+
+// Toggle function for showing/hiding full dates in summary table
+function toggleShowFullDatesInSummary() {
+  showFullDatesInSummary.value = !showFullDatesInSummary.value;
+}
 
 // Fixed teams state
 const fixedTeams = ref([]);
@@ -470,199 +470,9 @@ function toggleFixedTeamsSection() {
 }
 
 // Helper function to check if a generated structure matches the fixed team patterns
-function doesStructureMatchPatterns(generatedStructure, patterns) {
-  if (generatedStructure.length !== patterns.length) return false;
-
-  const structureTeamsSets = generatedStructure.map((t) => new Set(t));
-  const patternDetails = patterns.map((pTeam) => ({
-    players: new Set(pTeam.filter((p) => p !== '*')),
-    wildcards: pTeam.filter((p) => p === '*').length,
-    originalSize: pTeam.length, // Not strictly needed here but good for context
-  }));
-
-  const numTeams = patterns.length;
-  const usedStructureTeams = Array.from({ length: numTeams }, () => false);
-
-  function findMatch(patternIndex) {
-    if (patternIndex === numTeams) {
-      return true; // All patterns matched
-    }
-
-    const currentPattern = patternDetails[patternIndex];
-
-    for (let structIdx = 0; structIdx < numTeams; structIdx++) {
-      if (usedStructureTeams[structIdx]) continue;
-
-      const currentStructTeamSet = structureTeamsSets[structIdx];
-
-      // 1. All fixed players in pattern must be in structureTeam
-      let allPatternPlayersFound = true;
-      for (const player of currentPattern.players) {
-        if (!currentStructTeamSet.has(player)) {
-          allPatternPlayersFound = false;
-          break;
-        }
-      }
-      if (!allPatternPlayersFound) continue;
-
-      // 2. Size check for structureTeam based on pattern
-      if (
-        currentStructTeamSet.size < currentPattern.players.size ||
-        currentStructTeamSet.size > currentPattern.players.size + currentPattern.wildcards
-      ) {
-        continue;
-      }
-
-      // 3. Players in structureTeam who are NOT in currentPattern.players
-      //    must NOT be fixed players designated by *other* patterns.
-      let containsForeignFixedPlayer = false;
-      for (const member of currentStructTeamSet) {
-        if (currentPattern.players.has(member)) continue;
-
-        for (let otherPIdx = 0; otherPIdx < numTeams; otherPIdx++) {
-          if (otherPIdx === patternIndex) continue;
-          if (patternDetails[otherPIdx].players.has(member)) {
-            containsForeignFixedPlayer = true;
-            break;
-          }
-        }
-        if (containsForeignFixedPlayer) break;
-      }
-      if (containsForeignFixedPlayer) continue;
-
-      usedStructureTeams[structIdx] = true;
-      if (findMatch(patternIndex + 1)) {
-        return true;
-      }
-      usedStructureTeams[structIdx] = false; // Backtrack
-    }
-    return false;
-  }
-
-  return findMatch(0);
-}
 
 // Helper function to generate all possible team structures
 // fixedTeamPatternsToMatch is like [["1","7","*","*"], ["10","11","*","*"], ["*","*","*","*"]]
-function generateAllPossibleTeamStructures(
-  users,
-  numTeams,
-  maxTeamSize,
-  fixedTeamPatternsToMatch = null
-) {
-  const resultStructuresSet = new Set();
-  const n = users.length;
-
-  if (n === 0 && numTeams === 0) {
-    // Allow generating empty structures if no users and no teams
-    if (
-      fixedTeamPatternsToMatch &&
-      fixedTeamPatternsToMatch.every((p) => p.every((m) => m === '*'))
-    ) {
-      // If patterns are all wildcards, an empty structure (no teams, or empty teams) might be valid
-      // This case needs careful handling based on expected output for 0 users.
-      // For now, if users=0, numTeams=0, result is [[]] or [] depending on convention.
-      // Let's assume if numTeams > 0, it won't reach here with users=0 without prior checks.
-    }
-    // If numTeams > 0 and n = 0, it implies teams of only wildcards.
-    // The current logic will produce nothing, which might be fine.
-    // If fixedTeamPatternsToMatch expects specific empty teams, that's a more complex generation.
-    // For now, if n=0, numTeams>0, this will return [].
-  }
-  if (numTeams === 0) {
-    return n === 0 ? [[]] : []; // If no teams to form, result is empty or one empty structure if no users.
-  }
-  if (n === 0 && numTeams > 0) {
-    // No users, but teams to form (must be all wildcards)
-    if (
-      fixedTeamPatternsToMatch &&
-      fixedTeamPatternsToMatch.length === numTeams &&
-      fixedTeamPatternsToMatch.every((p) => p.every((m) => m === '*'))
-    ) {
-      const emptyTeamsStructure = Array(numTeams)
-        .fill(null)
-        .map(() => []);
-      // Normalization might be tricky here, but for all empty teams, it's consistent.
-      return [emptyTeamsStructure];
-    }
-    return []; // Cannot form teams with no users unless patterns allow all wildcards.
-  }
-  if (n > 0 && numTeams === 0) return []; // Cannot put users into zero teams.
-
-  const teams = Array(numTeams)
-    .fill(null)
-    .map(() => []);
-
-  function normalizeTeamStructure(structure) {
-    const normalizedStruct = structure.map((team) => [...team].sort());
-    normalizedStruct.sort((teamA, teamB) =>
-      JSON.stringify(teamA).localeCompare(JSON.stringify(teamB))
-    );
-    return normalizedStruct;
-  }
-
-  function backtrack(userIndex) {
-    if (userIndex === n) {
-      const currentGeneratedTeams = teams.map((team) => [...team]);
-
-      if (fixedTeamPatternsToMatch) {
-        if (!doesStructureMatchPatterns(currentGeneratedTeams, fixedTeamPatternsToMatch)) {
-          return; // Does not match patterns
-        }
-        // If it matches patterns, empty teams are allowed if the pattern allows it.
-      } else {
-        // No patterns specified, original behavior: no empty teams allowed.
-        // Also, ensure all users are in some team (implicit by n === userIndex and team formation)
-        // and that teams are not oversized (implicit by teams[i].length < maxTeamSize check)
-        if (currentGeneratedTeams.some((team) => team.length === 0)) {
-          // This check is for the case where numTeams > actual teams needed.
-          // e.g. 3 users, maxTeamSize 2, numTeamsToForm = 2.
-          // One team will have 1 user, other 2. No empty teams.
-          // If 3 users, maxTeamSize 3, numTeamsToForm = 1. Team has 3.
-          // If fixedTeamPatternsToMatch is null, we expect all teams to be non-empty if users are distributed.
-          // However, if numTeams > ceil(n / maxTeamSize), some teams *could* be empty.
-          // The original code's `if (teams.some(team => team.length === 0)) return;` was simple.
-          // Let's refine: if no patterns, a team can only be empty if all users are already assigned
-          // and there are "excess" teams.
-          // The problem is more about ensuring all *users* are assigned, which backtrack does.
-          // The constraint should be that if a team is formed, it meets min size if applicable,
-          // or if it's empty, it's because there were no more users for it.
-          // For simplicity with no patterns: ensure all formed teams are non-empty if possible.
-          // The most straightforward is: if no patterns, all formed teams should have someone if possible.
-          // This can happen if numTeamsToForm > n. e.g. 1 user, max 2 => numTeamsToForm = 1. Team [u1].
-          // e.g. 1 user, max 1 => numTeamsToForm = 1. Team [u1].
-          // This condition might be too strict.
-          // Let's remove it for now and rely on the fact that users are distributed.
-          // The scoring later will penalize structures with too many small/empty teams if not desired.
-        }
-      }
-
-      const normalized = normalizeTeamStructure(currentGeneratedTeams);
-      resultStructuresSet.add(JSON.stringify(normalized));
-      return;
-    }
-
-    const currentUser = users[userIndex];
-    for (let i = 0; i < numTeams; i++) {
-      if (teams[i].length < maxTeamSize) {
-        teams[i].push(currentUser);
-        backtrack(userIndex + 1);
-        teams[i].pop();
-      }
-      // Optimization for non-pattern case (original):
-      // If a user is placed in an empty team, no need to try placing them in subsequent empty teams
-      // as those configurations would be symmetrical.
-      // This optimization is only valid if fixedTeamPatternsToMatch is null,
-      // because patterns can make team slots non-symmetrical.
-      if (teams[i].length === 0 && !fixedTeamPatternsToMatch) {
-        break;
-      }
-    }
-  }
-
-  backtrack(0);
-  return Array.from(resultStructuresSet).map((s) => JSON.parse(s));
-}
 
 const participatingUsers = computed(() => {
   const userSet = new Set();
@@ -712,6 +522,13 @@ const displayedPageNumbers = computed(() => {
   }
   // Remove duplicates if totalPages is small
   return [...new Set(rangeWithDots)];
+});
+
+const eventUrl = computed(() => {
+  if (route.params.eventUrlProp) {
+    return decodeURIComponent(route.params.eventUrlProp);
+  }
+  return '';
 });
 
 const groupedTimeSlotsForTable = computed(() => {
@@ -810,7 +627,7 @@ async function fetchSummaryData() {
       try {
         console.log(`[SummaryPage] Fetching event details for locationUid for: ${eventUrl}`);
         const eventDetailsResponse = await fetch(
-          `${API_BASE_URL}/events/${encodeURIComponent(eventUrl)}`
+          `${API_BASE_URL}/events/${encodeURIComponent(eventUrl)}`,
         );
         if (eventDetailsResponse.ok) {
           const details = await eventDetailsResponse.json();
@@ -883,7 +700,7 @@ async function fetchVacancyData() {
     reconstructedEventUrl,
     eventStartDate.value,
     eventEndDate.value,
-    eventLocationUid.value
+    eventLocationUid.value,
   );
 
   try {
@@ -896,11 +713,11 @@ async function fetchVacancyData() {
 
     console.log(
       '[ScheduleFetch] Raw API Response:',
-      JSON.parse(JSON.stringify(scheduleResponse.data))
+      JSON.parse(JSON.stringify(scheduleResponse.data)),
     ); // ★ 詳細なレスポンス全体ログ
     console.log(
       '[ScheduleFetch] Raw API Response Data:',
-      JSON.parse(JSON.stringify(scheduleResponse.data))
+      JSON.parse(JSON.stringify(scheduleResponse.data)),
     ); // ★ レスポンスデータログ
 
     console.log('Vacancy data response status:', scheduleResponse);
@@ -926,20 +743,10 @@ async function fetchVacancyData() {
   }
 }
 
-function getVacancyScore(vacancyType) {
-  const scores = {
-    MANY: 5,
-    FEW: 1,
-    FULL: 0,
-    NOT_IN_SALES_PERIOD: 0,
-  };
-  return scores[vacancyType] || 0;
-}
-
-function generateAndSortTeamCombinations(fixedTeamsFromUI = null) {
-  loadingTeamCombinations.value = true; // Moved here
-  internalSortedTeamCombinations.value = []; // Moved here
-  currentPage.value = 1; // Moved here
+async function generateAndSortTeamCombinations(fixedTeamsFromUI = null) {
+  loadingTeamCombinations.value = true;
+  internalSortedTeamCombinations.value = [];
+  currentPage.value = 1;
 
   if (
     !allEventTimeSlotsUTC.value ||
@@ -948,190 +755,34 @@ function generateAndSortTeamCombinations(fixedTeamsFromUI = null) {
     maxParticipants.value <= 0 ||
     participatingUsers.value.length === 0
   ) {
-    // internalSortedTeamCombinations.value = []; // Already done
     loadingTeamCombinations.value = false;
     return;
   }
 
-  const users = participatingUsers.value;
-  const numTeamsToForm = Math.ceil(users.length / maxParticipants.value);
-
-  if (numTeamsToForm === 0 && users.length > 0) {
-    // Should not happen if maxParticipants > 0
-    loadingTeamCombinations.value = false;
-    return;
-  }
-  if (numTeamsToForm === 0 && users.length === 0) {
-    // No users, no teams
-    // Potentially generate structure of empty teams if patterns demand
-  }
-
-  let teamStructurePattern = null;
-  if (fixedTeamsFromUI && fixedTeamsFromUI.length > 0) {
-    // Only process if there are actual UI inputs
-    let patternInput = JSON.parse(JSON.stringify(fixedTeamsFromUI));
-
-    while (patternInput.length < numTeamsToForm) {
-      patternInput.push([]); // Pad with empty arrays for wildcard teams
-    }
-    if (patternInput.length > numTeamsToForm) {
-      patternInput = patternInput.slice(0, numTeamsToForm); // Truncate if UI has too many
-    }
-    teamStructurePattern = formatFixedTeamsForSearch(patternInput, maxParticipants.value);
-  } else if (users.length === 0 && numTeamsToForm > 0) {
-    // Case: No users, but event settings imply teams (e.g. fixed slots)
-    // This might imply all wildcard teams if fixedTeamsFromUI is null/empty
-    // For now, if no users, allPossibleStructures will be empty or [[]]
-    // and the rest of the logic should handle it.
-    // If fixedTeamsFromUI is explicitly set to e.g. [[]] for one wildcard team, it's handled above.
-  }
-
-  // const allPossibleStructures = generateAllPossibleTeamStructures(users, numTeamsToForm, maxParticipants.value, validFixedTeams);
-  // Replace validFixedTeams with teamStructurePattern
-  const allPossibleStructures = generateAllPossibleTeamStructures(
-    users,
-    numTeamsToForm,
-    maxParticipants.value,
-    teamStructurePattern // Pass the new pattern here
-  );
-
-  if (allPossibleStructures.length === 0) {
-    internalSortedTeamCombinations.value = [];
-    loadingTeamCombinations.value = false;
-    return;
-  }
-
-  const evaluatedCombinations = allPossibleStructures.map((structure) => {
-    let minBestSlotScoreForStructure = Infinity;
-    let minTeamRankLevelForStructure = Infinity;
-    let minOverallVacancyScoreForStructure = Infinity; // 編成案の総合的な空き状況スコア（最小値を採用）
-
-    const teamsInStructureDetails = structure.map((teamMembers) => {
-      let teamRankLevel = 0;
-      teamMembers.forEach((member) => {
-        teamRankLevel += getUserRankScore(member);
-      });
-      minTeamRankLevelForStructure = Math.min(minTeamRankLevelForStructure, teamRankLevel);
-
-      if (teamMembers.length === 0) {
-        return {
-          members: [],
-          bestSlotsDetails: [],
-          scoreInBestSlot: 0,
-          teamRankLevel: 0,
-          maxVacancyScoreInBestSlots: 0, // 空チームの空きスコア
-        };
-      }
-
-      let maxScoreForTeam = -1;
-      let bestSlotsForTeamUtc = [];
-
-      allEventTimeSlotsUTC.value.forEach((slotUtc) => {
-        let goingCount = 0;
-        let maybeCount = 0;
-        teamMembers.forEach((member) => {
-          const status = userSelectionsMap.value[member]?.[slotUtc];
-          if (status === 'available' || status === 'going') {
-            goingCount++;
-          } else if (status === 'maybe') {
-            maybeCount++;
-          }
-        });
-
-        const currentSlotScore =
-          teamMembers.length > 0
-            ? (5 * goingCount +
-                2 * maybeCount -
-                100 * (teamMembers.length - goingCount - maybeCount)) /
-              teamMembers.length
-            : 0;
-
-        if (currentSlotScore > maxScoreForTeam) {
-          maxScoreForTeam = currentSlotScore;
-          bestSlotsForTeamUtc = [slotUtc];
-        } else if (currentSlotScore === maxScoreForTeam && maxScoreForTeam !== -1) {
-          // Ensure not adding to empty if initial was -1
-          bestSlotsForTeamUtc.push(slotUtc);
-        }
-      });
-
-      const bestSlotsDetails = bestSlotsForTeamUtc.map((slotUtc) => {
-        const d = new Date(slotUtc);
-        return {
-          utc: slotUtc,
-          dateLabel: d.toLocaleDateString('ja-JP', {
-            month: 'short',
-            day: 'numeric',
-            weekday: 'short',
-            timeZone: 'Asia/Tokyo',
-          }),
-          timeLabel: d.toLocaleTimeString('ja-JP', {
-            hour: '2-digit',
-            minute: '2-digit',
-            timeZone: 'Asia/Tokyo',
-          }),
-        };
-      });
-
-      const actualScoreInBestSlot = maxScoreForTeam === -1 ? 0 : maxScoreForTeam;
-      minBestSlotScoreForStructure = Math.min(minBestSlotScoreForStructure, actualScoreInBestSlot);
-
-      let maxVacancyScoreForTeamInBestSlots = 0;
-      if (bestSlotsDetails.length > 0) {
-        bestSlotsDetails.forEach((slotDetail) => {
-          const vacancyType = vacancyStatusMap.value[slotDetail.utc];
-          const score = getVacancyScore(vacancyType);
-          if (score > maxVacancyScoreForTeamInBestSlots) {
-            maxVacancyScoreForTeamInBestSlots = score;
-          }
-        });
-      }
-
-      return {
-        members: teamMembers,
-        bestSlotsDetails: bestSlotsDetails,
-        scoreInBestSlot: actualScoreInBestSlot,
-        teamRankLevel: teamRankLevel,
-        maxVacancyScoreInBestSlots: maxVacancyScoreForTeamInBestSlots,
-      };
-    });
-
-    // 編成案の総合的な空き状況スコアを計算
-    // (編成内の各チームの「最適日時における最高の空き状況スコア」のうち、最も低いものを採用)
-    if (teamsInStructureDetails.length > 0) {
-      minOverallVacancyScoreForStructure = Math.min(
-        ...teamsInStructureDetails.map((t) => t.maxVacancyScoreInBestSlots)
-      );
-    } else {
-      minOverallVacancyScoreForStructure = 0;
-    }
-
-    return {
-      structureDetails: teamsInStructureDetails,
-      overallSlotScore:
-        minBestSlotScoreForStructure === Infinity ? 0 : minBestSlotScoreForStructure,
-      minTeamRankLevel:
-        minTeamRankLevelForStructure === Infinity ? 0 : minTeamRankLevelForStructure,
-      overallVacancyScore:
-        minOverallVacancyScoreForStructure === Infinity ? 0 : minOverallVacancyScoreForStructure,
+  try {
+    const payload = {
+      event_url: eventUrl.value,
+      participatingUsers: participatingUsers.value,
+      maxParticipants: maxParticipants.value,
+      fixedTeamsFromUI: fixedTeamsFromUI,
+      allEventTimeSlotsUTC: allEventTimeSlotsUTC.value,
+      userSelectionsMap: userSelectionsMap.value,
+      vacancyStatusMap: vacancyStatusMap.value || {},
     };
-  });
 
-  evaluatedCombinations.sort((a, b) => {
-    // 1. Overall Vacancy Score (descending) - 残り枚数が多い順
-    if (b.overallVacancyScore !== a.overallVacancyScore) {
-      return b.overallVacancyScore - a.overallVacancyScore;
-    }
-    // 2. Minimum Team Rank Level (descending)
-    if (b.minTeamRankLevel !== a.minTeamRankLevel) {
-      return b.minTeamRankLevel - a.minTeamRankLevel;
-    }
-    // 3. Overall Slot Score (descending)
-    return b.overallSlotScore - a.overallSlotScore;
-  });
+    const response = await axios.post(`${API_BASE_URL}/calculate-teams`, payload);
 
-  internalSortedTeamCombinations.value = evaluatedCombinations;
-  loadingTeamCombinations.value = false;
+    if (response.data.timeoutReached) {
+      console.warn('Backend search timed out, returning best-effort results.');
+    }
+
+    internalSortedTeamCombinations.value = response.data.combinations || [];
+  } catch (error) {
+    console.error('Error generating team combinations:', error);
+    errorMessage.value = 'チーム編成案の生成中にエラーが発生しました。';
+  } finally {
+    loadingTeamCombinations.value = false;
+  }
 }
 
 const sortedTeamCombinations = computed(() => {
@@ -1316,7 +967,7 @@ function handleDropOnFixedTeamsArea(event, targetTeamIndex) {
       fixedTeams.value.push([user]);
     } else {
       console.warn(
-        `Cannot create new team with user ${user}, it would exceed max participants if maxParticipants is 0.`
+        `Cannot create new team with user ${user}, it would exceed max participants if maxParticipants is 0.`,
       );
       if (
         fromTeamIndex !== null &&
@@ -1387,27 +1038,6 @@ function applyFixedTeamsAndRegenerate() {
 }
 
 // Helper function to format fixed teams for search
-function formatFixedTeamsForSearch(teamsInput, teamSize = 4) {
-  const teams = Array.isArray(teamsInput) ? teamsInput : [];
-
-  return teams.map((teamArray) => {
-    const currentTeam = Array.isArray(teamArray) ? teamArray : [];
-    const formattedTeam = [];
-    for (let i = 0; i < teamSize; i++) {
-      // Check if the player exists and is not an empty string (or just whitespace)
-      if (
-        i < currentTeam.length &&
-        currentTeam[i] != null &&
-        currentTeam[i].toString().trim() !== ''
-      ) {
-        formattedTeam.push(currentTeam[i].toString());
-      } else {
-        formattedTeam.push('*');
-      }
-    }
-    return formattedTeam;
-  });
-}
 
 onMounted(() => {
   fetchSummaryData();
