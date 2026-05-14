@@ -34,7 +34,7 @@ import jaLocale from '@fullcalendar/core/locales/ja';
 import axios from 'axios';
 import ScheduleModal from './ScheduleModal.vue';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 const isModalOpen = ref(false);
 const selectedEvent = ref({});

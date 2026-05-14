@@ -141,7 +141,7 @@ const props = defineProps({
 });
 
 const router = useRouter();
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 const event = reactive({
   eventUrl: '',

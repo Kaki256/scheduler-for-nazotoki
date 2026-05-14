@@ -426,7 +426,7 @@ const eventLocationUid = ref(''); // イベントの場所UID
 
 const internalSortedTeamCombinations = ref([]);
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 // State for showing/hiding full dates in summary table
 const showFullDatesInSummary = ref(false);
