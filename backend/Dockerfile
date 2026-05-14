@@ -1,19 +1,20 @@
 FROM oven/bun:latest
 
+# 本番環境用の最適化
 ENV NODE_ENV=production
 
 WORKDIR /usr/src/app
 
-COPY package.json bun.lock* ./
-
-RUN bun install
-
-# Copy application source
+# 【超重要】モノレポのワークスペースを認識させるため、先に全ファイルをコピーする
 COPY . .
+
+# ルートディレクトリでフロント・バックエンド両方の依存関係を一括インストール
+RUN bun install --frozen-lockfile
 
 # セキュリティ: デフォルトの bun ユーザーに権限を切り下げる
 USER bun
 
 EXPOSE 3001
 
-CMD ["bun", "run", "server.js"]
+# 起動コマンド（ルートからbackendディレクトリを指定して実行）
+CMD ["bun", "run", "--cwd", "backend", "start"]
