@@ -1,7 +1,7 @@
 name: backend
 type: proc
 proc:
-  build: bun install --cwd backend
+  build: bun install
   start: bun run --cwd backend start
   port: 4000
 env:
