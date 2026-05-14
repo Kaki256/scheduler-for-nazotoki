@@ -2,7 +2,7 @@ name: backend
 type: proc
 proc:
   build: curl -fsSL https://bun.sh/install | BUN_INSTALL=$PWD/.bun bash && $PWD/.bun/bin/bun install --cwd backend
-  start: $PWD/.bun/bin/bun run --cwd backend start
+  start: PATH="$PWD/.bun/bin:$PATH" bun run --cwd backend start
   port: 4000
 env:
   NS_MARIADB_HOSTNAME: ${NS_MARIADB_HOSTNAME}
