@@ -1,7 +1,10 @@
 # version: '3.8'
 services:
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: always
     ports:
       - "3001:3001"
     volumes:
@@ -12,16 +15,19 @@ services:
     environment:
       - NODE_ENV=development
       - NS_MARIADB_HOSTNAME=db
-      - NS_MARIADB_USER=${NS_MARIADB_USER?Variable not set}
-      - NS_MARIADB_PASSWORD=${NS_MARIADB_PASSWORD?Variable not set}
-      - NS_MARIADB_DATABASE=${NS_MARIADB_DATABASE?Variable not set}
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID?Variable not set}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET?Variable not set}
+      - NS_MARIADB_USER=${NS_MARIADB_USER}
+      - NS_MARIADB_PASSWORD=${NS_MARIADB_PASSWORD}
+      - NS_MARIADB_DATABASE=${NS_MARIADB_DATABASE}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
     depends_on:
       - db
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: always
     ports:
       - "5173:5173"
     volumes:

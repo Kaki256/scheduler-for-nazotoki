@@ -45,8 +45,8 @@ const dbPool = mysql.createPool({
 
 const PORT = process.env.PORT || 3001;
 
-// Database setup function
-async function setupDatabase() {
+// Database setup function with retry logic
+async function setupDatabase(retries = 5, delay = 5000) {
   const dbConfig = {
     host: process.env.NS_MARIADB_HOSTNAME,
     user: process.env.NS_MARIADB_USER,
@@ -56,52 +56,54 @@ async function setupDatabase() {
     multipleStatements: true,
   };
 
-  console.log(`[DB Setup Debug] Attempting connection with config:
-    Host: ${dbConfig.host},
-    Port: ${dbConfig.port},
-    User: ${dbConfig.user},
-    Database: ${dbConfig.database}`);
+  for (let i = 0; i < retries; i++) {
+    let connection;
+    try {
+      console.log(
+        `[DB Setup] Attempting connection (Attempt ${i + 1}/${retries}) with host: ${dbConfig.host}`,
+      );
+      connection = await mysql.createConnection({
+        host: dbConfig.host,
+        user: dbConfig.user,
+        password: dbConfig.password,
+        multipleStatements: dbConfig.multipleStatements,
+      });
+      console.log(`[DB Setup] Connected to MySQL server.`);
 
-  let connection;
-  try {
-    console.log(`[DB Setup] Setting up database connection...`);
-    connection = await mysql.createConnection({
-      host: dbConfig.host,
-      user: dbConfig.user,
-      password: dbConfig.password,
-      multipleStatements: dbConfig.multipleStatements,
-    });
-    console.log(`[DB Setup] Connected to MySQL server.`);
+      console.log(`[DB Setup] Creating database "${dbConfig.database}" if it does not exist...`);
+      await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\`;`);
+      console.log(`[DB Setup] Database "${dbConfig.database}" created or already exists.`);
 
-    console.log(`[DB Setup] Creating database "${dbConfig.database}" if it does not exist...`);
-    await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\`;`);
-    console.log(`[DB Setup] Database "${dbConfig.database}" created or already exists.`);
+      console.log(`[DB Setup] Using database "${dbConfig.database}"...`);
+      await connection.query(`USE \`${dbConfig.database}\`;`);
+      console.log(`Database '${dbConfig.database}' is ready or created.`);
 
-    console.log(`[DB Setup] Using database "${dbConfig.database}"...`);
-    await connection.query(`USE \`${dbConfig.database}\`;`);
-    console.log(`Database '${dbConfig.database}' is ready or created.`);
+      const sqlScriptPath = path.join(__dirname, 'db.sql');
+      console.log(`[DB Setup] Reading SQL script from ${sqlScriptPath}...`);
+      if (!fs.existsSync(sqlScriptPath)) {
+        console.error(`[DB Setup] SQL script file not found: ${sqlScriptPath}`);
+        throw new Error('SQL script file not found.');
+      }
 
-    const sqlScriptPath = path.join(__dirname, 'db.sql');
-    console.log(`[DB Setup] Reading SQL script from ${sqlScriptPath}...`);
-    if (!fs.existsSync(sqlScriptPath)) {
-      console.error(`[DB Setup] SQL script file not found: ${sqlScriptPath}`);
-      throw new Error('SQL script file not found.');
-    }
-
-    const sqlScript = fs.readFileSync(sqlScriptPath, 'utf8');
-    console.log('[DB Setup] Executing db.sql script...');
-    await connection.query(sqlScript);
-    console.log('[DB Setup] db.sql script executed successfully.');
-  } catch (error) {
-    console.error('[DB Setup] Error setting up database:', error);
-    if (error.sqlMessage) {
-      console.error('[DB Setup] SQL Error:', error.sqlMessage);
-    }
-    process.exit(1);
-  } finally {
-    if (connection) {
-      await connection.end();
-      console.log('[DB Setup] Setup connection ended.');
+      const sqlScript = fs.readFileSync(sqlScriptPath, 'utf8');
+      console.log('[DB Setup] Executing db.sql script...');
+      await connection.query(sqlScript);
+      console.log('[DB Setup] db.sql script executed successfully.');
+      return; // Success!
+    } catch (error) {
+      console.error(`[DB Setup] Connection attempt ${i + 1} failed:`, error.message);
+      if (i < retries - 1) {
+        console.log(`[DB Setup] Retrying in ${delay / 1000} seconds...`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      } else {
+        console.error('[DB Setup] All connection attempts failed.');
+        throw error;
+      }
+    } finally {
+      if (connection) {
+        await connection.end();
+        console.log('[DB Setup] Setup connection ended.');
+      }
     }
   }
 }

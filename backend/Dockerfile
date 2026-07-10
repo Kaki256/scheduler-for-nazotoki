@@ -16,5 +16,5 @@ USER bun
 
 EXPOSE 3001
 
-# 起動コマンド（ルートからbackendディレクトリを指定して実行）
-CMD ["bun", "run", "--cwd", "backend", "start"]
+# 起動コマンド（カレントディレクトリから実行）
+CMD ["bun", "run", "start"]
