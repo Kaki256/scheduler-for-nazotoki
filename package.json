@@ -9,6 +9,8 @@
     "dev": "docker compose up --build",
     "down": "docker compose down",
     "format": "bun run --cwd frontend format && bun run --cwd backend format",
-    "lint": "bun run --cwd frontend lint && bun run --cwd backend lint"
+    "lint": "bun run --cwd frontend lint && bun run --cwd backend lint",
+    "test": "bun run --cwd frontend test && bun run --cwd backend test",
+    "test:watch": "bun run --cwd frontend test:watch"
   }
 }

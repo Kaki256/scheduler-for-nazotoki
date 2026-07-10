@@ -177,6 +177,13 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
+import {
+  getTodayStr,
+  formatDate,
+  extractEventName,
+  filterEventsByViewMode,
+  sortEvents,
+} from '../utils/eventHelper.js';
 
 const events = ref([]);
 const loading = ref(true);
@@ -187,44 +194,8 @@ const viewMode = ref('active'); // 'active' or 'archive'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
-// 今日の日付 (YYYY-MM-DD)
-const todayStr = computed(() => {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-});
-
-// 日付フォーマット関数 (SchedulePage.vue から拝借、共通化も検討)
-function formatDate(dateString) {
-  if (!dateString) return '未設定';
-  try {
-    const date = new Date(dateString + 'T00:00:00Z'); // UTCとして解釈
-    const year = date.getUTCFullYear();
-    const month = date.getUTCMonth() + 1;
-    const day = date.getUTCDate();
-    return `${year}年${month}月${day}日`;
-  } catch (e) {
-    console.error('Error formatting date:', dateString, e);
-    return dateString;
-  }
-}
-
-// URLからイベント名を抽出する簡単なヘルパー (より堅牢な方法が必要な場合あり)
-function extractEventName(url) {
-  try {
-    const pathSegments = new URL(url).pathname.split('/');
-    // 例: /tumbleweed-org/e-yawfwel/ -> yawfwel
-    const eventSegment = pathSegments.filter(Boolean).pop();
-    if (eventSegment) {
-      return eventSegment.replace(/-org/g, '').replace(/-/g, ' ').replace(/_/g, ' ');
-    }
-    return 'イベント';
-  } catch (e) {
-    return 'イベント';
-  }
-}
+// 今日の日付 (YYYY-MM-DD) — getTodayStr is from utils/eventHelper.js
+const todayStr = computed(() => getTodayStr());
 
 async function fetchEvents() {
   loading.value = true;
@@ -266,55 +237,11 @@ async function fetchEvents() {
   }
 }
 
-const filteredEvents = computed(() => {
-  if (viewMode.value === 'active') {
-    return events.value.filter((e) => !e.endDate || e.endDate >= todayStr.value);
-  } else {
-    return events.value.filter((e) => e.endDate && e.endDate < todayStr.value);
-  }
-});
+const filteredEvents = computed(() =>
+  filterEventsByViewMode(events.value, viewMode.value, todayStr.value),
+);
 
-const sortedEvents = computed(() => {
-  return [...filteredEvents.value].sort((a, b) => {
-    // アーカイブ時は日付順のみでソート（新しい順）
-    if (viewMode.value === 'archive') {
-      const dateA = a.startDate ? new Date(a.startDate) : null;
-      const dateB = b.startDate ? new Date(b.startDate) : null;
-      if (dateA && dateB) return dateB - dateA;
-      return 0;
-    }
-
-    // 1. 未入力のイベントを優先 (false が先)
-    if (a.hasCurrentUserSubmittedStatus === false && b.hasCurrentUserSubmittedStatus !== false) {
-      return -1;
-    }
-    if (a.hasCurrentUserSubmittedStatus !== false && b.hasCurrentUserSubmittedStatus === false) {
-      return 1;
-    }
-
-    // 2. 開始日の降順 (新しいものが先)
-    const dateA = a.startDate ? new Date(a.startDate) : null;
-    const dateB = b.startDate ? new Date(b.startDate) : null;
-    if (dateA && dateB) {
-      if (dateA > dateB) return -1;
-      if (dateA < dateB) return 1;
-    } else if (dateA) {
-      // b.startDate が null の場合、a を先に
-      return -1;
-    } else if (dateB) {
-      // a.startDate が null の場合、b を先に
-      return 1;
-    }
-
-    // 3. イベント名の昇順
-    const nameA = (a.name || extractEventName(a.eventUrl) || '').toLowerCase();
-    const nameB = (b.name || extractEventName(b.eventUrl) || '').toLowerCase();
-    if (nameA < nameB) return -1;
-    if (nameA > nameB) return 1;
-
-    return 0;
-  });
-});
+const sortedEvents = computed(() => sortEvents(filteredEvents.value, viewMode.value));
 
 // frontend/src/components/EventListPage.vue (script setup部分)
 function navigateToSchedule(eventUrl) {
