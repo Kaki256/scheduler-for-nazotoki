@@ -18,6 +18,26 @@
       <p>{{ errorMessage }}</p>
     </div>
 
+    <!-- View Mode Tabs -->
+    <div class="tabs-container mb-6">
+      <div class="flex justify-center border-b border-gray-200">
+        <button
+          class="tab-button"
+          :class="{ 'tab-button-active': viewMode === 'active' }"
+          @click="viewMode = 'active'"
+        >
+          実施中
+        </button>
+        <button
+          class="tab-button"
+          :class="{ 'tab-button-active': viewMode === 'archive' }"
+          @click="viewMode = 'archive'"
+        >
+          アーカイブ
+        </button>
+      </div>
+    </div>
+
     <div v-if="!loading && sortedEvents.length === 0 && !errorMessage" class="no-events-container">
       <svg
         class="no-events-icon"
@@ -34,11 +54,17 @@
           d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2zm3-8V3m12 4h-3"
         />
       </svg>
-      <h3 class="mt-2 text-lg font-medium text-gray-900">登録されているイベントがありません</h3>
-      <p class="mt-1 text-sm text-gray-500">
+      <h3 class="mt-2 text-lg font-medium text-gray-900">
+        {{
+          viewMode === 'active'
+            ? '実施中のイベントがありません'
+            : 'アーカイブされたイベントがありません'
+        }}
+      </h3>
+      <p v-if="viewMode === 'active'" class="mt-1 text-sm text-gray-500">
         上のボタンから新しいイベントを登録するか、マイカレンダーを設定できます。
       </p>
-      <div class="no-events-actions">
+      <div v-if="viewMode === 'active'" class="no-events-actions">
         <button class="button-primary" @click="router.push('/events/new')">新規イベント登録</button>
         <button class="button-secondary" @click="router.push('/my-calendar')">
           マイカレンダー設定へ
@@ -157,8 +183,18 @@ const loading = ref(true);
 const errorMessage = ref('');
 const router = useRouter();
 const currentUsername = ref('test-user'); // 仮のユーザー名
+const viewMode = ref('active'); // 'active' or 'archive'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+
+// 今日の日付 (YYYY-MM-DD)
+const todayStr = computed(() => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+});
 
 // 日付フォーマット関数 (SchedulePage.vue から拝借、共通化も検討)
 function formatDate(dateString) {
@@ -230,8 +266,24 @@ async function fetchEvents() {
   }
 }
 
+const filteredEvents = computed(() => {
+  if (viewMode.value === 'active') {
+    return events.value.filter((e) => !e.endDate || e.endDate >= todayStr.value);
+  } else {
+    return events.value.filter((e) => e.endDate && e.endDate < todayStr.value);
+  }
+});
+
 const sortedEvents = computed(() => {
-  return [...events.value].sort((a, b) => {
+  return [...filteredEvents.value].sort((a, b) => {
+    // アーカイブ時は日付順のみでソート（新しい順）
+    if (viewMode.value === 'archive') {
+      const dateA = a.startDate ? new Date(a.startDate) : null;
+      const dateB = b.startDate ? new Date(b.startDate) : null;
+      if (dateA && dateB) return dateB - dateA;
+      return 0;
+    }
+
     // 1. 未入力のイベントを優先 (false が先)
     if (a.hasCurrentUserSubmittedStatus === false && b.hasCurrentUserSubmittedStatus !== false) {
       return -1;
@@ -746,6 +798,34 @@ onMounted(() => {
 .button-delete:disabled {
   opacity: 0.6; /* disabled:opacity-60 */
   cursor: not-allowed;
+}
+
+.tabs-container {
+  display: flex;
+  justify-content: center;
+}
+
+.tab-button {
+  padding: 0.75rem 1.5rem;
+  font-weight: 600;
+  font-size: 1rem;
+  color: #6b7280; /* text-gray-500 */
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s ease;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  cursor: pointer;
+}
+
+.tab-button:hover {
+  color: #4f46e5; /* text-indigo-600 */
+}
+
+.tab-button-active {
+  color: #4f46e5; /* text-indigo-600 */
+  border-bottom-color: #4f46e5; /* border-indigo-600 */
 }
 
 .event-card {

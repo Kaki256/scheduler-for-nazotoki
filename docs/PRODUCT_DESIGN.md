@@ -12,7 +12,9 @@ A schedule coordination and team building application for puzzle events. It fetc
 
 ## Core Features
 
-1. **Event Management:** Auto-fetch event details by providing a URL (escape.id, LivePocket, Yodaka).
+1. **Event Management:** 
+   - Auto-fetch event details by providing a URL (escape.id, LivePocket, Yodaka).
+   - **Archiving:** Automatically separates active events from past ones based on the end date, providing an 'Archive' view to keep the main list clean while preserving history.
 2. **Schedule Input:** Calendar UI for individuals to input their availability (Available, Maybe, Unavailable).
 3. **Team Building:** Automatically calculates the best team combinations based on availability scores and allows fixing specific members in the same team.
    - *Performance Note:* To handle combinatorial explosions for large groups (20-30+ users), the calculation is performed on the backend using a time-boxed best-effort algorithm (max 5 seconds) to ensure system stability and a responsive UX.
