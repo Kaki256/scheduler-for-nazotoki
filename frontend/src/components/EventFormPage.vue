@@ -122,6 +122,14 @@
 import { ref, reactive, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
+import {
+  parseEventName,
+  parseDateRange,
+  parseLocationUid,
+  parseLocationInfo,
+  parseMaxParticipants,
+  parseEstimatedTime,
+} from '../utils/escapeIdParser.js';
 
 const props = defineProps({
   mode: {
@@ -292,199 +300,93 @@ async function fetchEventDataFromUrl() {
       throw new Error('イベント情報の主要な構造(info[1])が見つかりませんでした。');
     }
 
+    // --- Extract all fields via utility functions (supports old & new ESCAPE.id structures) ---
+
     // Event Name
-    if (infoDetails.eventName?.[1]) {
+    const parsedName = parseEventName(infoDetails);
+    if (parsedName) {
       if (effectiveMode.value === 'create') {
-        // Only update name if in create mode
-        event.name = infoDetails.eventName[1];
+        event.name = parsedName;
         console.log('取得したイベント名:', event.name);
       } else {
-        console.log('イベント名 (編集モードでは保持):', originalName);
-        event.name = originalName; // Keep original name in edit mode
+        event.name = originalName;
       }
     } else {
       console.warn('イベント名は取得できませんでした。');
-      if (effectiveMode.value === 'edit') event.name = originalName; // Ensure original is kept if fetch fails
+      if (effectiveMode.value === 'edit') event.name = originalName;
     }
 
     // Start Date and End Date
-    let earliestFirstStartTime = null;
-    let latestLastEndTime = null;
-
-    const processDateValue = (dateValue, isStartTime) => {
-      if (!dateValue || typeof dateValue !== 'string') return;
-      try {
-        const currentDate = new Date(dateValue);
-        if (isNaN(currentDate.getTime())) return; // Invalid date
-
-        if (isStartTime) {
-          if (!earliestFirstStartTime || currentDate < earliestFirstStartTime) {
-            earliestFirstStartTime = currentDate;
-          }
-        } else {
-          // isEndTime
-          if (!latestLastEndTime || currentDate > latestLastEndTime) {
-            latestLastEndTime = currentDate;
-          }
-        }
-      } catch (e) {
-        console.warn('日付文字列の処理中にエラー:', dateValue, e);
-      }
-    };
-
-    const scheduleDataSources = [];
-    // activeSlotGroups からスケジュール情報を収集
-    if (infoDetails.activeSlotGroups && Array.isArray(infoDetails.activeSlotGroups[1])) {
-      infoDetails.activeSlotGroups[1].forEach((groupEntry) => {
-        if (groupEntry && Array.isArray(groupEntry) && groupEntry.length > 1 && groupEntry[1]) {
-          scheduleDataSources.push(groupEntry[1]);
-        }
-      });
-    }
-    // visibleLocations からスケジュール情報を収集
-    if (infoDetails.visibleLocations && Array.isArray(infoDetails.visibleLocations[1])) {
-      infoDetails.visibleLocations[1].forEach((locationEntry) => {
-        if (
-          locationEntry &&
-          Array.isArray(locationEntry) &&
-          locationEntry.length > 1 &&
-          locationEntry[1]
-        ) {
-          // activeSlotGroupsで既に同じ場所の情報が処理されている可能性を考慮
-          // ここでは単純に追加し、min/maxロジックで重複を処理する
-          scheduleDataSources.push(locationEntry[1]);
-        }
-      });
-    }
-
-    scheduleDataSources.forEach((source) => {
-      if (
-        source.firstStartTime &&
-        Array.isArray(source.firstStartTime) &&
-        source.firstStartTime.length > 1
-      ) {
-        processDateValue(source.firstStartTime[1], true);
-      }
-      if (
-        source.lastEndTime &&
-        Array.isArray(source.lastEndTime) &&
-        source.lastEndTime.length > 1
-      ) {
-        processDateValue(source.lastEndTime[1], false);
-      }
-    });
-
-    if (earliestFirstStartTime) {
+    const { startDate: parsedStart, endDate: parsedEnd } = parseDateRange(infoDetails);
+    if (parsedStart) {
       if (effectiveMode.value === 'create') {
-        // Only update dates if in create mode
-        event.startDate = formatDateForInput(earliestFirstStartTime.toISOString());
-        console.log('設定された最も早い開始日:', event.startDate, earliestFirstStartTime);
+        event.startDate = formatDateForInput(parsedStart);
+        console.log('設定された開始日:', event.startDate);
       } else {
-        console.log('開始日 (編集モードでは保持):', originalStartDate);
-        event.startDate = originalStartDate; // Keep original start date in edit mode
+        event.startDate = originalStartDate;
       }
     } else {
       console.warn('有効な開始日は見つかりませんでした。');
-      if (effectiveMode.value === 'edit') event.startDate = originalStartDate; // Ensure original is kept
+      if (effectiveMode.value === 'edit') event.startDate = originalStartDate;
     }
 
-    if (latestLastEndTime) {
+    if (parsedEnd) {
       if (effectiveMode.value === 'create') {
-        // Only update dates if in create mode
-        event.endDate = formatDateForInput(latestLastEndTime.toISOString());
-        console.log('設定された最も遅い終了日:', event.endDate, latestLastEndTime);
+        event.endDate = formatDateForInput(parsedEnd);
+        console.log('設定された終了日:', event.endDate);
       } else {
-        console.log('終了日 (編集モードでは保持):', originalEndDate);
-        event.endDate = originalEndDate; // Keep original end date in edit mode
+        event.endDate = originalEndDate;
       }
     } else {
       console.warn('有効な終了日は見つかりませんでした。');
-      if (effectiveMode.value === 'edit') event.endDate = originalEndDate; // Ensure original is kept
+      if (effectiveMode.value === 'edit') event.endDate = originalEndDate;
     }
 
     // Location UID
-    let extractedLocationUid = null;
-    // Attempt to get UID from activeSlotGroups first
-    if (infoDetails.activeSlotGroups?.[1]?.[0]?.[1]?.location?.[1]?.uid?.[1]) {
-      extractedLocationUid = infoDetails.activeSlotGroups[1][0][1].location[1].uid[1];
-    }
-    // If not found in activeSlotGroups, try visibleLocations second
-    else if (infoDetails.visibleLocations?.[1]?.[0]?.[1]?.uid?.[1]) {
-      // The structure for visibleLocations seems to be infoDetails.visibleLocations[1][0][1] as the location object itself
-      extractedLocationUid = infoDetails.visibleLocations[1][0][1].uid[1];
-    }
-
-    if (extractedLocationUid) {
-      event.locationUid = extractedLocationUid;
+    const parsedLocationUid = parseLocationUid(infoDetails);
+    if (parsedLocationUid) {
+      event.locationUid = parsedLocationUid;
       console.log('取得したLocation UID:', event.locationUid);
     } else {
-      console.warn('Location UIDの抽出に失敗しました。');
+      console.warn('Location UIDの抽出に失敗しました。スケジュール取得はUID無しで試行します。');
     }
 
     // Max Participants
-    if (infoDetails.maxParticipants?.[1] !== undefined) {
-      event.maxParticipants = infoDetails.maxParticipants[1];
+    const parsedMaxParticipants = parseMaxParticipants(infoDetails);
+    if (parsedMaxParticipants !== null) {
+      event.maxParticipants = parsedMaxParticipants;
       console.log('取得したMax Participants:', event.maxParticipants);
     } else {
       console.warn('Max Participants は取得できませんでした。');
     }
 
-    // Estimated Time (所要時間)
-    if (infoDetails.estimatedTime?.[1]) {
-      event.estimatedTime = String(infoDetails.estimatedTime[1]);
-      console.log('取得した所要時間 (estimated_time):', event.estimatedTime);
+    // Estimated Time
+    const parsedEstimatedTime = parseEstimatedTime(infoDetails);
+    if (parsedEstimatedTime) {
+      event.estimatedTime = parsedEstimatedTime;
+      console.log('取得した所要時間:', event.estimatedTime);
     } else {
-      console.warn('所要時間は取得できませんでした。estimatedTime のキーを確認してください。');
+      console.warn('所要時間は取得できませんでした。');
     }
 
-    // Location Name (開催地名) and Location Address (開催地住所)
-    let locationObjectForNameAndAddress = null;
-    if (infoDetails.activeSlotGroups?.[1]?.[0]?.[1]?.location?.[1]) {
-      locationObjectForNameAndAddress = infoDetails.activeSlotGroups[1][0][1].location[1];
-    } else if (infoDetails.visibleLocations?.[1]?.[0]?.[1]) {
-      locationObjectForNameAndAddress = infoDetails.visibleLocations[1][0][1];
-    }
-
-    if (locationObjectForNameAndAddress) {
-      if (locationObjectForNameAndAddress.name?.[1]) {
-        event.locationName = locationObjectForNameAndAddress.name[1];
-        console.log('取得した開催地名:', event.locationName);
-      } else {
-        console.warn('開催地名は location オブジェクトから取得できませんでした。');
-      }
-
-      if (locationObjectForNameAndAddress.address?.[1]) {
-        event.locationAddress = locationObjectForNameAndAddress.address[1];
-        console.log('取得した開催地住所:', event.locationAddress);
-      } else {
-        console.warn('開催地住所は location オブジェクトから取得できませんでした。');
-      }
+    // Location Name and Address
+    const { name: parsedLocName, address: parsedLocAddress } = parseLocationInfo(infoDetails);
+    if (parsedLocName) {
+      event.locationName = parsedLocName;
+      console.log('取得した開催地名:', event.locationName);
     } else {
-      // フォールバックとして infoDetails 直下のキーも試す
-      console.warn(
-        '開催地名・住所の元となる location オブジェクトが見つかりませんでした。infoDetails 直下を試します。',
-      );
-      if (infoDetails.location_name?.[1]) {
-        event.locationName = infoDetails.location_name[1];
-        console.log('取得した開催地名 (infoDetails.location_name):', event.locationName);
-      } else {
-        console.warn('開催地名は infoDetails.location_name からも取得できませんでした。');
-      }
-      if (infoDetails.location_address?.[1]) {
-        event.locationAddress = infoDetails.location_address[1];
-        console.log('取得した開催地住所 (infoDetails.location_address):', event.locationAddress);
-      } else {
-        console.warn('開催地住所は infoDetails.location_address からも取得できませんでした。');
-      }
+      console.warn('開催地名は取得できませんでした。');
+    }
+    if (parsedLocAddress) {
+      event.locationAddress = parsedLocAddress;
+      console.log('取得した開催地住所:', event.locationAddress);
+    } else {
+      console.warn('開催地住所は取得できませんでした。');
     }
 
     if (!event.name && !event.startDate && !event.endDate && !event.locationUid) {
       errorMessage.value =
         '主要なイベント情報（名前、開始/終了日、場所ID）の取得に失敗しました。URLを確認するか、手動で入力してください。';
-    } else if (!event.locationUid) {
-      // locationUid は登録に必須の可能性があるので、取得できなかった場合は警告を出す
-      errorMessage.value =
-        'Location UIDが取得できませんでした。イベントURLが正しいか、またはページの構造を確認してください。手動での入力が必要な場合があります。';
     }
   } catch (err) {
     console.error('イベントデータの取得に失敗しました:', err);

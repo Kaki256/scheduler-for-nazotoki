@@ -1282,7 +1282,7 @@ app.post('/api/get-schedule', async (req, res) => {
     eventSlug: eventSlug,
     dateFrom: date_from,
     dateTo: date_to,
-    locationUid: location_uid, // 外部APIのペイロードに location_uid を使用
+    locationUid: location_uid || null, // 外部APIのペイロードに location_uid を使用（nullでも受付可）
     locationAreaUid: null,
   };
 
@@ -1458,8 +1458,10 @@ const EXTERNAL_REQUEST_TIMEOUT = 10000; // 10秒のタイムアウト
 
 // Helper function to fetch all event slots for the summary
 async function fetchEventSlotsForSummary(eventUrl, dateFrom, dateTo, locationUid) {
-  if (!eventUrl || !dateFrom || !dateTo || !locationUid) {
-    console.error('[fetchEventSlotsForSummary] Missing required parameters.');
+  if (!eventUrl || !dateFrom || !dateTo) {
+    console.error(
+      '[fetchEventSlotsForSummary] Missing required parameters (eventUrl, dateFrom, dateTo).',
+    );
     return [];
   }
 
@@ -1476,7 +1478,7 @@ async function fetchEventSlotsForSummary(eventUrl, dateFrom, dateTo, locationUid
     eventSlug: eventSlug,
     dateFrom: dateFrom,
     dateTo: dateTo,
-    locationUid: locationUid,
+    locationUid: locationUid || null,
     locationAreaUid: null,
   };
 
